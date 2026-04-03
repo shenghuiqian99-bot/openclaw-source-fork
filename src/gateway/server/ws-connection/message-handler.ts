@@ -3,6 +3,7 @@ import os from "node:os";
 import type { WebSocket } from "ws";
 import { loadConfig } from "../../../config/config.js";
 import {
+  getBoundDeviceBootstrapProfile,
   revokeDeviceBootstrapToken,
   verifyDeviceBootstrapToken,
 } from "../../../infra/device-bootstrap.js";
@@ -11,6 +12,7 @@ import {
   normalizeDevicePublicKeyBase64Url,
 } from "../../../infra/device-identity.js";
 import {
+  approveBootstrapDevicePairing,
   approveDevicePairing,
   ensureDeviceToken,
   getPairedDevice,
@@ -31,6 +33,7 @@ import { upsertPresence } from "../../../infra/system-presence.js";
 import { loadVoiceWakeConfig } from "../../../infra/voicewake.js";
 import { rawDataToString } from "../../../infra/ws.js";
 import type { createSubsystemLogger } from "../../../logging/subsystem.js";
+import type { DeviceBootstrapProfile } from "../../../shared/device-bootstrap-profile.js";
 import { roleScopesAllow } from "../../../shared/operator-scope-compat.js";
 import {
   isBrowserOperatorUiClient,
@@ -697,6 +700,8 @@ export function attachGatewayWsMessageHandler(params: {
           return;
         }
 
+        let bootstrapProfile: DeviceBootstrapProfile | null = null;
+
         const trustedProxyAuthOk = isTrustedProxyControlUiOperatorAuth({
           isControlUi,
           role,
@@ -784,6 +789,21 @@ export function attachGatewayWsMessageHandler(params: {
                 allowedScopes: pairedScopes,
               });
             };
+            if (
+              bootstrapProfile === null &&
+              authMethod === "bootstrap-token" &&
+              reason === "not-paired" &&
+              role === "node" &&
+              scopes.length === 0 &&
+              !existingPairedDevice &&
+              bootstrapTokenCandidate
+            ) {
+              bootstrapProfile = await getBoundDeviceBootstrapProfile({
+                token: bootstrapTokenCandidate,
+                deviceId: device.id,
+                publicKey: devicePublicKey,
+              });
+            }
             const allowSilentLocalPairing = shouldAllowSilentLocalPairing({
               isLocalClient,
               hasBrowserOriginHeader,
@@ -791,19 +811,27 @@ export function attachGatewayWsMessageHandler(params: {
               isWebchat,
               reason,
             });
-            // QR bootstrap onboarding is node-only and single-use. When a fresh device presents
-            // a valid bootstrap token for the baseline node profile, complete pairing in the same
-            // handshake so iOS does not get stuck retrying with an already-consumed bootstrap token.
+            // QR bootstrap onboarding stays single-use, but the first node bootstrap handshake
+            // should seed the full QR baseline so the app can switch over to stored node/operator
+            // device tokens without asking the user for shared auth.
             const allowSilentBootstrapPairing =
               authMethod === "bootstrap-token" &&
               reason === "not-paired" &&
               role === "node" &&
               scopes.length === 0 &&
-              !existingPairedDevice;
+              !existingPairedDevice &&
+              bootstrapProfile !== null;
+            const bootstrapProfileForSilentApproval = allowSilentBootstrapPairing
+              ? bootstrapProfile
+              : null;
+            const bootstrapPairingRoles = bootstrapProfileForSilentApproval
+              ? Array.from(new Set([role, ...bootstrapProfileForSilentApproval.roles]))
+              : undefined;
             const pairing = await requestDevicePairing({
               deviceId: device.id,
               publicKey: devicePublicKey,
               ...clientPairingMetadata,
+              ...(bootstrapPairingRoles ? { roles: bootstrapPairingRoles } : {}),
               silent:
                 reason === "scope-upgrade"
                   ? false
@@ -828,9 +856,14 @@ export function attachGatewayWsMessageHandler(params: {
               return replacementPending?.requestId;
             };
             if (pairing.request.silent === true) {
-              approved = await approveDevicePairing(pairing.request.requestId, {
-                callerScopes: scopes,
-              });
+              approved = bootstrapProfileForSilentApproval
+                ? await approveBootstrapDevicePairing(
+                    pairing.request.requestId,
+                    bootstrapProfileForSilentApproval,
+                  )
+                : await approveDevicePairing(pairing.request.requestId, {
+                    callerScopes: scopes,
+                  });
               if (approved?.status === "approved") {
                 if (allowSilentBootstrapPairing && bootstrapTokenCandidate) {
                   const revoked = await revokeDeviceBootstrapToken({
@@ -991,6 +1024,48 @@ export function attachGatewayWsMessageHandler(params: {
         const deviceToken = device
           ? await ensureDeviceToken({ deviceId: device.id, role, scopes })
           : null;
+        const bootstrapDeviceTokens: Array<{
+          deviceToken: string;
+          role: string;
+          scopes: string[];
+          issuedAtMs: number;
+        }> = [];
+        if (deviceToken) {
+          bootstrapDeviceTokens.push({
+            deviceToken: deviceToken.token,
+            role: deviceToken.role,
+            scopes: deviceToken.scopes,
+            issuedAtMs: deviceToken.rotatedAtMs ?? deviceToken.createdAtMs,
+          });
+        }
+        const bootstrapProfileForHello: DeviceBootstrapProfile | null = device
+          ? bootstrapProfile
+          : null;
+        if (device && bootstrapProfileForHello !== null) {
+          const bootstrapProfileForHelloResolved =
+            bootstrapProfileForHello as DeviceBootstrapProfile;
+          for (const bootstrapRole of bootstrapProfileForHelloResolved.roles) {
+            if (bootstrapDeviceTokens.some((entry) => entry.role === bootstrapRole)) {
+              continue;
+            }
+            const bootstrapRoleScopes =
+              bootstrapRole === "operator" ? bootstrapProfileForHelloResolved.scopes : [];
+            const extraToken = await ensureDeviceToken({
+              deviceId: device.id,
+              role: bootstrapRole,
+              scopes: bootstrapRoleScopes,
+            });
+            if (!extraToken) {
+              continue;
+            }
+            bootstrapDeviceTokens.push({
+              deviceToken: extraToken.token,
+              role: extraToken.role,
+              scopes: extraToken.scopes,
+              issuedAtMs: extraToken.rotatedAtMs ?? extraToken.createdAtMs,
+            });
+          }
+        }
 
         if (role === "node") {
           const reconciliation = await reconcileNodePairingOnConnect({
@@ -1082,6 +1157,9 @@ export function attachGatewayWsMessageHandler(params: {
                 role: deviceToken.role,
                 scopes: deviceToken.scopes,
                 issuedAtMs: deviceToken.rotatedAtMs ?? deviceToken.createdAtMs,
+                ...(bootstrapDeviceTokens.length > 1
+                  ? { deviceTokens: bootstrapDeviceTokens }
+                  : {}),
               }
             : undefined,
           policy: {
