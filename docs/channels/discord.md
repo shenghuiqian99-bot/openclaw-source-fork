@@ -571,6 +571,9 @@ Default slash command settings:
     - `off` (default)
     - `first`
     - `all`
+    - `auto`
+
+    `auto` applies the same reply behavior as `first` or `all`, but only when rapid-fire messages were debounce-batched or a message waited behind the sequential queue. Direct single-message replies stay unquoted. Channels that already support `first` or `all` also support `auto` with no extra channel-specific changes.
 
     Note: `off` disables implicit reply threading. Explicit `[[reply_to_*]]` tags are still honored.
 

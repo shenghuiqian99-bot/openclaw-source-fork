@@ -144,6 +144,7 @@ main channel or start a thread under the triggering post.
 - `first`: for top-level channel/group posts, start a thread under that post and route the
   conversation to a thread-scoped session.
 - `all`: same behavior as `first` for Mattermost today.
+- `auto`: use the same thread behavior as `first` or `all`, but only when rapid-fire messages were debounce-batched or a message waited behind the sequential queue. Direct single-message replies stay in the main channel.
 - Direct messages ignore this setting and stay non-threaded.
 
 Config example:
@@ -163,6 +164,7 @@ Notes:
 - Thread-scoped sessions use the triggering post id as the thread root.
 - `first` and `all` are currently equivalent because once Mattermost has a thread root,
   follow-up chunks and media continue in that same thread.
+- Channels that already support `first` or `all` also support `auto` with no extra channel-specific changes.
 
 ## Access control (DMs)
 

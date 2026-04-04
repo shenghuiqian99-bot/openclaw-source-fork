@@ -468,6 +468,9 @@ curl "https://api.telegram.org/bot<bot_token>/getUpdates"
     - `off` (default)
     - `first`
     - `all`
+    - `auto`
+
+    `auto` applies the same reply behavior as `first` or `all`, but only when rapid-fire messages were debounce-batched or a message waited behind the sequential queue. Direct single-message replies stay unquoted. Channels that already support `first` or `all` also support `auto` with no extra channel-specific changes.
 
     Note: `off` disables implicit reply threading. Explicit `[[reply_to_*]]` tags are still honored.
 
@@ -1016,7 +1019,7 @@ Primary reference:
 - `channels.telegram.capabilities.inlineButtons`: `off | dm | group | all | allowlist` (default: allowlist).
 - `channels.telegram.accounts.<account>.capabilities.inlineButtons`: per-account override.
 - `channels.telegram.commands.nativeSkills`: enable/disable Telegram native skills commands.
-- `channels.telegram.replyToMode`: `off | first | all` (default: `off`).
+- `channels.telegram.replyToMode`: `off | first | all | auto` (default: `off`).
 - `channels.telegram.textChunkLimit`: outbound chunk size (chars).
 - `channels.telegram.chunkMode`: `length` (default) or `newline` to split on blank lines (paragraph boundaries) before length chunking.
 - `channels.telegram.linkPreview`: toggle link previews for outbound messages (default: true).

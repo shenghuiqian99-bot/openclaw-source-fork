@@ -819,7 +819,8 @@ Live directory lookup uses the logged-in Matrix account:
 - `groupAllowFrom`: allowlist of user IDs for room traffic.
 - `groupAllowFrom` entries should be full Matrix user IDs. Unresolved names are ignored at runtime.
 - `historyLimit`: max room messages to include as group history context. Falls back to `messages.groupChat.historyLimit`. Set `0` to disable.
-- `replyToMode`: `off`, `first`, or `all`.
+- `replyToMode`: `off`, `first`, `all`, or `auto`.
+- `auto` uses the same reply metadata as `first` or `all`, but only for debounce-batched messages or messages that waited behind the sequential queue. Direct single-message replies stay unquoted. Channels that already support `first` or `all` also support `auto` with no extra channel-specific changes.
 - `markdown`: optional Markdown rendering configuration for outbound Matrix text.
 - `streaming`: `off` (default), `partial`, `true`, or `false`. `partial` and `true` enable single-message draft previews with edit-in-place updates.
 - `blockStreaming`: `true` enables separate progress messages for completed assistant blocks while draft preview streaming is active.

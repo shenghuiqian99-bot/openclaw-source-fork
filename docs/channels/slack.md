@@ -325,9 +325,11 @@ Current Slack message actions include `send`, `upload-file`, `download-file`, `r
 
 Reply threading controls:
 
-- `channels.slack.replyToMode`: `off|first|all` (default `off`)
+- `channels.slack.replyToMode`: `off|first|all|auto` (default `off`)
 - `channels.slack.replyToModeByChatType`: per `direct|group|channel`
 - legacy fallback for direct chats: `channels.slack.dm.replyToMode`
+
+`auto` applies the same threading behavior as `first` or `all`, but only when rapid-fire messages were debounce-batched or a message waited behind the sequential queue. Direct single-message replies stay in the main conversation. Channels that already support `first` or `all` also support `auto` with no extra channel-specific changes.
 
 Manual reply tags are supported:
 
