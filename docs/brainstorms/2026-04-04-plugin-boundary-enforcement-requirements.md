@@ -162,3 +162,6 @@ barrels are important signals for planning, but they do not override R1-R4.
 ## Next Steps
 
 → /prompts:ce-plan for structured implementation planning
+
+[technical]: #
+[needs research]: #

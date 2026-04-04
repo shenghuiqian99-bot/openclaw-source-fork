@@ -9,19 +9,31 @@ import {
 } from "./doctor.js";
 
 const resolveCommandSecretRefsViaGatewayMock = vi.hoisted(() => vi.fn());
+const getChannelsCommandSecretTargetIdsMock = vi.hoisted(() => vi.fn(() => []));
+const createSubsystemLoggerMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(() => ({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      child: vi.fn(),
+    })),
+  })),
+);
 const listTelegramAccountIdsMock = vi.hoisted(() => vi.fn());
 const inspectTelegramAccountMock = vi.hoisted(() => vi.fn());
 const lookupTelegramChatIdMock = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk/runtime", async () => {
-  const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/runtime")>(
-    "openclaw/plugin-sdk/runtime",
-  );
-  return {
-    ...actual,
-    resolveCommandSecretRefsViaGateway: resolveCommandSecretRefsViaGatewayMock,
-  };
-});
+vi.mock("openclaw/plugin-sdk/runtime", () => ({
+  createSubsystemLogger: createSubsystemLoggerMock,
+  getChannelsCommandSecretTargetIds: getChannelsCommandSecretTargetIdsMock,
+  resolveCommandSecretRefsViaGateway: resolveCommandSecretRefsViaGatewayMock,
+}));
 
 vi.mock("./accounts.js", async () => {
   const actual = await vi.importActual<typeof import("./accounts.js")>("./accounts.js");

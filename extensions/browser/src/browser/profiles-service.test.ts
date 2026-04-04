@@ -6,14 +6,43 @@ import { resolveOpenClawUserDataDir } from "./chrome.js";
 import type { BrowserRouteContext, BrowserServerState } from "./server-context.js";
 import { movePathToTrash } from "./trash.js";
 
-vi.mock("../config/config.js", async () => {
-  const actual = await vi.importActual<typeof import("../config/config.js")>("../config/config.js");
+const browserSupportMocks = vi.hoisted(() => {
+  class MockSsrFBlockedError extends Error {}
+
   return {
-    ...actual,
+    MockSsrFBlockedError,
+    createConfigIO: vi.fn(),
+    getRuntimeConfigSnapshot: vi.fn(() => undefined),
+    isPrivateNetworkAllowedByPolicy: vi.fn(
+      (policy?: { dangerouslyAllowPrivateNetwork?: boolean }) =>
+        policy?.dangerouslyAllowPrivateNetwork === true,
+    ),
     loadConfig: vi.fn(),
+    resolvePinnedHostnameWithPolicy: vi.fn(
+      async (
+        hostname: string,
+        params?: { policy?: { dangerouslyAllowPrivateNetwork?: boolean } },
+      ) => {
+        const isPrivateIp = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/u.test(hostname);
+        if (isPrivateIp && params?.policy?.dangerouslyAllowPrivateNetwork !== true) {
+          throw new MockSsrFBlockedError("private/internal/special-use ip address");
+        }
+        return { hostname, address: hostname };
+      },
+    ),
     writeConfigFile: vi.fn(async () => {}),
   };
 });
+
+vi.mock("openclaw/plugin-sdk/browser-support", () => ({
+  SsrFBlockedError: browserSupportMocks.MockSsrFBlockedError,
+  createConfigIO: browserSupportMocks.createConfigIO,
+  getRuntimeConfigSnapshot: browserSupportMocks.getRuntimeConfigSnapshot,
+  isPrivateNetworkAllowedByPolicy: browserSupportMocks.isPrivateNetworkAllowedByPolicy,
+  loadConfig: browserSupportMocks.loadConfig,
+  resolvePinnedHostnameWithPolicy: browserSupportMocks.resolvePinnedHostnameWithPolicy,
+  writeConfigFile: browserSupportMocks.writeConfigFile,
+}));
 
 vi.mock("./trash.js", () => ({
   movePathToTrash: vi.fn(async (targetPath: string) => targetPath),
