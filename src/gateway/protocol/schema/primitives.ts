@@ -10,6 +10,7 @@ import { SESSION_LABEL_MAX_LENGTH } from "../../../sessions/session-label.js";
 import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "../client-info.js";
 
 export const NonEmptyString = Type.String({ minLength: 1 });
+export const NonBlankString = Type.String({ minLength: 1, pattern: "\\S" });
 export const CHAT_SEND_SESSION_KEY_MAX_LENGTH = 512;
 export const ChatSendSessionKeyString = Type.String({
   minLength: 1,

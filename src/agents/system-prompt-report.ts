@@ -2,7 +2,9 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import { buildBootstrapInjectionStats } from "./bootstrap-budget.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
-import type { WorkspaceBootstrapFile } from "./workspace.js";
+import { isInstructionBootstrapFile, type WorkspaceBootstrapFile } from "./workspace.js";
+
+const INSTRUCTION_IMPORT_ERROR_PATTERN = /\[IMPORT ERROR\]/g;
 
 function extractBetween(
   input: string,
@@ -77,6 +79,71 @@ function extractToolListText(systemPrompt: string): string {
   return extracted.text.replace(markerA, "").trim();
 }
 
+function countInstructionImportErrors(content?: string): number {
+  if (!content) {
+    return 0;
+  }
+  return Array.from(content.matchAll(INSTRUCTION_IMPORT_ERROR_PATTERN)).length;
+}
+
+function inferInstructionKind(
+  file: WorkspaceBootstrapFile,
+): NonNullable<SessionSystemPromptReport["instructionFiles"]>["entries"][number]["kind"] {
+  if (file.instructionKind) {
+    return file.instructionKind;
+  }
+  if (file.name === "AGENTS.md") {
+    return "agents";
+  }
+  if (file.name === "CLAUDE.md") {
+    return "claude-project";
+  }
+  if (file.name === "CLAUDE.local.md") {
+    return "claude-local";
+  }
+  if (file.name.startsWith(".claude/rules/")) {
+    return "rule";
+  }
+  return "unknown";
+}
+
+function inferInstructionLoadMode(
+  file: WorkspaceBootstrapFile,
+): NonNullable<SessionSystemPromptReport["instructionFiles"]>["entries"][number]["loadMode"] {
+  if (file.instructionLoadMode) {
+    return file.instructionLoadMode;
+  }
+  if (file.name.startsWith(".claude/rules/")) {
+    return "rules-dir";
+  }
+  if (file.name === "CLAUDE.md" && /[\\/]\.claude[\\/]CLAUDE\.md$/i.test(file.path)) {
+    return "nested-fallback";
+  }
+  return "unknown";
+}
+
+function buildInstructionEntries(
+  bootstrapFiles: WorkspaceBootstrapFile[],
+): NonNullable<SessionSystemPromptReport["instructionFiles"]>["entries"] {
+  return bootstrapFiles.filter(isInstructionBootstrapFile).map((file, index) => {
+    const importErrors = countInstructionImportErrors(file.content);
+    return {
+      name: file.name,
+      path: file.path,
+      missing: file.missing,
+      kind: inferInstructionKind(file),
+      loadMode: inferInstructionLoadMode(file),
+      order: index + 1,
+      ...(file.frontMatterStripped ? { frontMatterStripped: true } : {}),
+      ...(file.rulePaths?.length ? { rulePaths: file.rulePaths } : {}),
+      ...(file.matchedRuleContextPaths?.length
+        ? { matchedRuleContextPaths: file.matchedRuleContextPaths }
+        : {}),
+      ...(importErrors > 0 ? { importErrors } : {}),
+    };
+  });
+}
+
 export function buildSystemPromptReport(params: {
   source: SessionSystemPromptReport["source"];
   generatedAt: number;
@@ -107,6 +174,13 @@ export function buildSystemPromptReport(params: {
   const toolsEntries = buildToolsEntries(params.tools);
   const toolsSchemaChars = toolsEntries.reduce((sum, t) => sum + (t.schemaChars ?? 0), 0);
   const skillsEntries = parseSkillBlocks(params.skillsPrompt);
+  const instructionEntries = buildInstructionEntries(params.bootstrapFiles);
+  const instructionLoaded = instructionEntries.filter((entry) => !entry.missing).length;
+  const instructionMissing = instructionEntries.length - instructionLoaded;
+  const instructionImportErrorCount = instructionEntries.reduce(
+    (sum, entry) => sum + (entry.importErrors ?? 0),
+    0,
+  );
 
   return {
     source: params.source,
@@ -125,6 +199,17 @@ export function buildSystemPromptReport(params: {
       projectContextChars,
       nonProjectContextChars: Math.max(0, systemPrompt.length - projectContextChars),
     },
+    ...(instructionEntries.length
+      ? {
+          instructionFiles: {
+            total: instructionEntries.length,
+            loaded: instructionLoaded,
+            missing: instructionMissing,
+            importErrorCount: instructionImportErrorCount,
+            entries: instructionEntries,
+          },
+        }
+      : {}),
     injectedWorkspaceFiles: buildBootstrapInjectionStats({
       bootstrapFiles: params.bootstrapFiles,
       injectedFiles: params.injectedFiles,

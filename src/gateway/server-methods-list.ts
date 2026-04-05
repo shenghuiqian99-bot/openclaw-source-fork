@@ -8,6 +8,7 @@ const BASE_METHODS = [
   "channels.status",
   "channels.logout",
   "status",
+  "instructions.diagnostics",
   "usage.status",
   "usage.cost",
   "tts.status",

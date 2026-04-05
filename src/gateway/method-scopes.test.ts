@@ -17,6 +17,7 @@ describe("method scope resolution", () => {
   it.each([
     ["sessions.resolve", ["operator.read"]],
     ["config.schema.lookup", ["operator.read"]],
+    ["instructions.diagnostics", ["operator.read"]],
     ["sessions.create", ["operator.write"]],
     ["sessions.send", ["operator.write"]],
     ["sessions.abort", ["operator.write"]],
@@ -107,6 +108,7 @@ describe("plugin approval method registration", () => {
     expect(methods).toContain("plugin.approval.request");
     expect(methods).toContain("plugin.approval.waitDecision");
     expect(methods).toContain("plugin.approval.resolve");
+    expect(methods).toContain("instructions.diagnostics");
   });
 
   it("classifies plugin approval methods", () => {

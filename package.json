@@ -484,9 +484,17 @@
       "types": "./dist/plugin-sdk/image-generation.d.ts",
       "default": "./dist/plugin-sdk/image-generation.js"
     },
+    "./plugin-sdk/video-generation": {
+      "types": "./dist/plugin-sdk/video-generation.d.ts",
+      "default": "./dist/plugin-sdk/video-generation.js"
+    },
     "./plugin-sdk/image-generation-core": {
       "types": "./dist/plugin-sdk/image-generation-core.d.ts",
       "default": "./dist/plugin-sdk/image-generation-core.js"
+    },
+    "./plugin-sdk/video-generation-core": {
+      "types": "./dist/plugin-sdk/video-generation-core.d.ts",
+      "default": "./dist/plugin-sdk/video-generation-core.js"
     },
     "./plugin-sdk/imessage": {
       "types": "./dist/plugin-sdk/imessage.d.ts",

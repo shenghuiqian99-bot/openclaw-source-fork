@@ -2,8 +2,10 @@ import syncFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { minimatch } from "minimatch";
 import { openBoundaryFile } from "../infra/boundary-file-read.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
+import { parseFrontmatterBlock } from "../markdown/frontmatter.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { isCronSessionKey, isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
@@ -23,6 +25,8 @@ export function resolveDefaultAgentWorkspaceDir(
 
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();
 export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
+export const DEFAULT_CLAUDE_FILENAME = "CLAUDE.md";
+export const DEFAULT_CLAUDE_LOCAL_FILENAME = "CLAUDE.local.md";
 export const DEFAULT_SOUL_FILENAME = "SOUL.md";
 export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
 export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
@@ -31,9 +35,13 @@ export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 export const DEFAULT_MEMORY_FILENAME = "MEMORY.md";
 export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
+const DEFAULT_CLAUDE_DIRNAME = ".claude";
+const DEFAULT_CLAUDE_RULES_DIRNAME = path.join(DEFAULT_CLAUDE_DIRNAME, "rules");
 const WORKSPACE_STATE_DIRNAME = ".openclaw";
 const WORKSPACE_STATE_FILENAME = "workspace-state.json";
 const WORKSPACE_STATE_VERSION = 1;
+const MAX_BOOTSTRAP_IMPORT_DEPTH = 5;
+const INSTRUCTION_IMPORT_TOKEN_PATTERN = /(^|[^\S\r\n])@([^\s`]+)/g;
 
 const workspaceTemplateCache = new Map<string, Promise<string>>();
 let gitAvailabilityPromise: Promise<boolean> | null = null;
@@ -46,7 +54,7 @@ const workspaceFileCache = new Map<string, { content: string; identity: string }
  * Read workspace files via boundary-safe open and cache by inode/dev/size/mtime identity.
  */
 type WorkspaceGuardedReadResult =
-  | { ok: true; content: string }
+  | { ok: true; content: string; canonicalPath: string }
   | { ok: false; reason: "path" | "validation" | "io"; error?: unknown };
 
 function workspaceFileIdentity(stat: syncFs.Stats, canonicalPath: string): string {
@@ -72,13 +80,13 @@ async function readWorkspaceFileWithGuards(params: {
   const cached = workspaceFileCache.get(params.filePath);
   if (cached && cached.identity === identity) {
     syncFs.closeSync(opened.fd);
-    return { ok: true, content: cached.content };
+    return { ok: true, content: cached.content, canonicalPath: opened.path };
   }
 
   try {
     const content = syncFs.readFileSync(opened.fd, "utf-8");
     workspaceFileCache.set(params.filePath, { content, identity });
-    return { ok: true, content };
+    return { ok: true, content, canonicalPath: opened.path };
   } catch (error) {
     workspaceFileCache.delete(params.filePath);
     return { ok: false, reason: "io", error };
@@ -99,6 +107,92 @@ function stripFrontMatter(content: string): string {
   let trimmed = content.slice(start);
   trimmed = trimmed.replace(/^\s+/, "");
   return trimmed;
+}
+
+function parseRuleScopePaths(content: string): string[] {
+  const raw = parseFrontmatterBlock(content).paths?.trim();
+  if (!raw) {
+    return [];
+  }
+
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim().replace(/\\/g, "/"))
+          .filter(Boolean);
+      }
+      if (typeof parsed === "string") {
+        const normalized = parsed.trim().replace(/\\/g, "/");
+        return normalized ? [normalized] : [];
+      }
+    } catch {
+      // Fall back to treating the raw value as a single glob.
+    }
+  }
+
+  const normalized = raw.replace(/\\/g, "/");
+  return normalized ? [normalized] : [];
+}
+
+function normalizeRuleContextPath(input: string, workspaceDir: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const absolute = path.isAbsolute(trimmed)
+    ? path.resolve(trimmed)
+    : path.resolve(workspaceDir, trimmed);
+  const relative = path.relative(workspaceDir, absolute).replace(/\\/g, "/");
+  if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) {
+    return null;
+  }
+  return relative;
+}
+
+function normalizeRuleContextPaths(paths: string[] | undefined, workspaceDir: string): string[] {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      paths
+        .map((value) => normalizeRuleContextPath(value, workspaceDir))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+}
+
+function normalizeRulePattern(pattern: string): string {
+  return pattern.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function matchRuleContextPaths(rulePaths: string[], contextPaths: string[]): string[] {
+  if (rulePaths.length === 0 || contextPaths.length === 0) {
+    return [];
+  }
+
+  const matched = new Set<string>();
+  for (const rulePath of rulePaths) {
+    const normalizedPattern = normalizeRulePattern(rulePath);
+    if (!normalizedPattern) {
+      continue;
+    }
+    for (const contextPath of contextPaths) {
+      if (
+        minimatch(contextPath, normalizedPattern, {
+          dot: true,
+          nocase: process.platform === "win32",
+        })
+      ) {
+        matched.add(contextPath);
+      }
+    }
+  }
+  return Array.from(matched);
 }
 
 async function loadTemplate(name: string): Promise<string> {
@@ -129,8 +223,10 @@ async function loadTemplate(name: string): Promise<string> {
   }
 }
 
-export type WorkspaceBootstrapFileName =
+type KnownWorkspaceBootstrapFileName =
   | typeof DEFAULT_AGENTS_FILENAME
+  | typeof DEFAULT_CLAUDE_FILENAME
+  | typeof DEFAULT_CLAUDE_LOCAL_FILENAME
   | typeof DEFAULT_SOUL_FILENAME
   | typeof DEFAULT_TOOLS_FILENAME
   | typeof DEFAULT_IDENTITY_FILENAME
@@ -140,11 +236,44 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_MEMORY_FILENAME
   | typeof DEFAULT_MEMORY_ALT_FILENAME;
 
+export type WorkspaceBootstrapFileName = KnownWorkspaceBootstrapFileName | (string & {});
+
+export type WorkspaceInstructionKind =
+  | "agents"
+  | "claude-project"
+  | "claude-local"
+  | "rule";
+
+export type WorkspaceInstructionLoadMode =
+  | "workspace-root"
+  | "nested-fallback"
+  | "fallback-default"
+  | "rules-dir";
+
 export type WorkspaceBootstrapFile = {
   name: WorkspaceBootstrapFileName;
   path: string;
   content?: string;
   missing: boolean;
+  instruction?: boolean;
+  instructionKind?: WorkspaceInstructionKind;
+  instructionLoadMode?: WorkspaceInstructionLoadMode;
+  frontMatterStripped?: boolean;
+  rulePaths?: string[];
+  matchedRuleContextPaths?: string[];
+};
+
+export type WorkspaceBootstrapLoadOptions = {
+  ruleContextPaths?: string[];
+};
+
+type WorkspaceBootstrapEntry = {
+  name: WorkspaceBootstrapFileName;
+  filePath: string;
+  instruction?: boolean;
+  instructionKind?: WorkspaceInstructionKind;
+  instructionLoadMode?: WorkspaceInstructionLoadMode;
+  stripFrontMatter?: boolean;
 };
 
 export type ExtraBootstrapLoadDiagnosticCode =
@@ -168,6 +297,8 @@ type WorkspaceSetupState = {
 /** Set of recognized bootstrap filenames for runtime validation */
 const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_AGENTS_FILENAME,
+  DEFAULT_CLAUDE_FILENAME,
+  DEFAULT_CLAUDE_LOCAL_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
@@ -177,6 +308,214 @@ const VALID_BOOTSTRAP_NAMES: ReadonlySet<string> = new Set([
   DEFAULT_MEMORY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
 ]);
+
+const COMPATIBLE_INSTRUCTION_BOOTSTRAP_NAMES: ReadonlySet<WorkspaceBootstrapFileName> = new Set([
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_CLAUDE_FILENAME,
+  DEFAULT_CLAUDE_LOCAL_FILENAME,
+]);
+
+export function isInstructionBootstrapFileName(
+  name: WorkspaceBootstrapFileName,
+): name is
+  | typeof DEFAULT_AGENTS_FILENAME
+  | typeof DEFAULT_CLAUDE_FILENAME
+  | typeof DEFAULT_CLAUDE_LOCAL_FILENAME {
+  return COMPATIBLE_INSTRUCTION_BOOTSTRAP_NAMES.has(name);
+}
+
+function resolveInstructionKindForBootstrapName(
+  name: WorkspaceBootstrapFileName,
+): WorkspaceInstructionKind | undefined {
+  if (name === DEFAULT_AGENTS_FILENAME) {
+    return "agents";
+  }
+  if (name === DEFAULT_CLAUDE_FILENAME) {
+    return "claude-project";
+  }
+  if (name === DEFAULT_CLAUDE_LOCAL_FILENAME) {
+    return "claude-local";
+  }
+  return undefined;
+}
+
+export function isInstructionBootstrapFile(file: WorkspaceBootstrapFile): boolean {
+  return file.instruction === true || isInstructionBootstrapFileName(file.name);
+}
+
+function isInstructionBootstrapEntry(entry: WorkspaceBootstrapEntry): boolean {
+  return entry.instruction === true || isInstructionBootstrapFileName(entry.name);
+}
+
+type InstructionImportToken = {
+  raw: string;
+  spec: string;
+  suffix: string;
+};
+
+function parseInstructionImportRaw(raw: string): InstructionImportToken | null {
+  const spec = raw.replace(/[),.;!?]+$/g, "").trim();
+  if (!spec) {
+    return null;
+  }
+  return {
+    raw,
+    spec,
+    suffix: raw.slice(spec.length),
+  };
+}
+
+function collectInstructionImportTokens(line: string): InstructionImportToken[] {
+  const tokens: InstructionImportToken[] = [];
+  for (const match of line.matchAll(INSTRUCTION_IMPORT_TOKEN_PATTERN)) {
+    const parsed = parseInstructionImportRaw(match[2] ?? "");
+    if (parsed) {
+      tokens.push(parsed);
+    }
+  }
+  return tokens;
+}
+
+function normalizeInstructionImportLine(
+  line: string,
+  tokens: InstructionImportToken[],
+): string {
+  if (tokens.length === 0) {
+    return line;
+  }
+  const queue = [...tokens];
+  return line.replace(INSTRUCTION_IMPORT_TOKEN_PATTERN, (full, prefix, raw) => {
+    const current = queue.shift();
+    const parsed = current ?? parseInstructionImportRaw(String(raw ?? ""));
+    if (!parsed) {
+      return full;
+    }
+    return `${prefix}${parsed.spec}${parsed.suffix}`;
+  });
+}
+
+function stripInstructionImportTokens(line: string): string {
+  return line.replace(INSTRUCTION_IMPORT_TOKEN_PATTERN, (full, prefix, raw) => {
+    const parsed = parseInstructionImportRaw(String(raw ?? ""));
+    if (!parsed) {
+      return full;
+    }
+    return prefix;
+  });
+}
+
+function isImportOnlyLine(line: string): boolean {
+  const trimmed = stripInstructionImportTokens(line).trim();
+  return trimmed.length === 0 || /^[-*+]\s*$/.test(trimmed);
+}
+
+function resolveInstructionImportPath(spec: string, sourcePath: string): string {
+  if (spec.startsWith("~")) {
+    return resolveUserPath(spec);
+  }
+  if (path.isAbsolute(spec)) {
+    return spec;
+  }
+  return path.resolve(path.dirname(sourcePath), spec);
+}
+
+function formatInstructionImportError(spec: string, reason: string): string {
+  return `[IMPORT ERROR] @${spec} -> ${reason}`;
+}
+
+async function expandInstructionImports(params: {
+  content: string;
+  sourcePath: string;
+  workspaceDir: string;
+  depth: number;
+  seenPaths: ReadonlySet<string>;
+  suppressPaths?: ReadonlySet<string>;
+  rootPath: string;
+}): Promise<string> {
+  const lines = params.content.split("\n");
+  const expandedLines: string[] = [];
+  let inCodeBlock = false;
+
+  const loadImportedContent = async (spec: string): Promise<string> => {
+    const nextDepth = params.depth + 1;
+    if (nextDepth > MAX_BOOTSTRAP_IMPORT_DEPTH) {
+      return formatInstructionImportError(
+        spec,
+        `max depth ${MAX_BOOTSTRAP_IMPORT_DEPTH} exceeded`,
+      );
+    }
+
+    const resolvedImportPath = resolveInstructionImportPath(spec, params.sourcePath);
+    const loaded = await readWorkspaceFileWithGuards({
+      filePath: resolvedImportPath,
+      workspaceDir: params.workspaceDir,
+    });
+    if (!loaded.ok) {
+      const reason =
+        loaded.reason === "path"
+          ? "missing or outside workspace"
+          : loaded.reason === "validation"
+            ? "blocked by workspace boundary"
+            : "io error";
+      return formatInstructionImportError(spec, reason);
+    }
+
+    if (loaded.canonicalPath !== params.rootPath && params.suppressPaths?.has(loaded.canonicalPath)) {
+      return "";
+    }
+
+    if (params.seenPaths.has(loaded.canonicalPath)) {
+      return formatInstructionImportError(spec, "cyclic import");
+    }
+
+    return await expandInstructionImports({
+      content: loaded.content,
+      sourcePath: loaded.canonicalPath,
+      workspaceDir: params.workspaceDir,
+      depth: nextDepth,
+      seenPaths: new Set([...params.seenPaths, loaded.canonicalPath]),
+      suppressPaths: params.suppressPaths,
+      rootPath: params.rootPath,
+    });
+  };
+
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      expandedLines.push(line);
+      continue;
+    }
+
+    if (inCodeBlock) {
+      expandedLines.push(line);
+      continue;
+    }
+
+    const tokens = collectInstructionImportTokens(line);
+    if (tokens.length === 0) {
+      expandedLines.push(line);
+      continue;
+    }
+
+    const normalizedLine = normalizeInstructionImportLine(line, tokens);
+    if (!isImportOnlyLine(line)) {
+      expandedLines.push(normalizedLine);
+    }
+
+    for (const token of tokens) {
+      const importedContent = (await loadImportedContent(token.spec)).trimEnd();
+      if (!importedContent) {
+        continue;
+      }
+      if (expandedLines.length > 0 && expandedLines[expandedLines.length - 1] !== "") {
+        expandedLines.push("");
+      }
+      expandedLines.push(importedContent);
+    }
+  }
+
+  return expandedLines.join("\n");
+}
 
 async function writeFileIfMissing(filePath: string, content: string): Promise<boolean> {
   try {
@@ -201,6 +540,42 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function directoryExists(dirPath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(dirPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function toWorkspaceRelativeBootstrapName(filePath: string, workspaceDir: string): string {
+  const relative = path.relative(workspaceDir, filePath).replace(/\\/g, "/");
+  if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) {
+    return path.basename(filePath);
+  }
+  return relative;
+}
+
+async function collectMarkdownFilesRecursively(dirPath: string): Promise<string[]> {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const childPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectMarkdownFilesRecursively(childPath)));
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) {
+      continue;
+    }
+    files.push(childPath);
+  }
+
+  return files;
 }
 
 function resolveWorkspaceStatePath(dir: string): string {
@@ -484,17 +859,92 @@ async function resolveMemoryBootstrapEntry(
   return null;
 }
 
-export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
-  const resolvedDir = resolveUserPath(dir);
+async function resolveInstructionBootstrapEntries(
+  resolvedDir: string,
+): Promise<WorkspaceBootstrapEntry[]> {
+  const entries: WorkspaceBootstrapEntry[] = [];
 
-  const entries: Array<{
-    name: WorkspaceBootstrapFileName;
-    filePath: string;
-  }> = [
-    {
+  const agentsPath = path.join(resolvedDir, DEFAULT_AGENTS_FILENAME);
+  if (await fileExists(agentsPath)) {
+    entries.push({
       name: DEFAULT_AGENTS_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME),
-    },
+      filePath: agentsPath,
+      instruction: true,
+      instructionKind: "agents",
+      instructionLoadMode: "workspace-root",
+    });
+  }
+
+  const claudePath = path.join(resolvedDir, DEFAULT_CLAUDE_FILENAME);
+  const nestedClaudePath = path.join(resolvedDir, DEFAULT_CLAUDE_DIRNAME, DEFAULT_CLAUDE_FILENAME);
+  if (await fileExists(claudePath)) {
+    entries.push({
+      name: DEFAULT_CLAUDE_FILENAME,
+      filePath: claudePath,
+      instruction: true,
+      instructionKind: "claude-project",
+      instructionLoadMode: "workspace-root",
+    });
+  } else if (await fileExists(nestedClaudePath)) {
+    entries.push({
+      name: DEFAULT_CLAUDE_FILENAME,
+      filePath: nestedClaudePath,
+      instruction: true,
+      instructionKind: "claude-project",
+      instructionLoadMode: "nested-fallback",
+    });
+  }
+
+  const claudeRulesDir = path.join(resolvedDir, DEFAULT_CLAUDE_RULES_DIRNAME);
+  if (await directoryExists(claudeRulesDir)) {
+    const ruleFiles = await collectMarkdownFilesRecursively(claudeRulesDir);
+    ruleFiles.sort((left, right) => left.localeCompare(right));
+    entries.push(
+      ...ruleFiles.map<WorkspaceBootstrapEntry>((filePath) => ({
+        name: toWorkspaceRelativeBootstrapName(filePath, resolvedDir),
+        filePath,
+        instruction: true,
+        instructionKind: "rule",
+        instructionLoadMode: "rules-dir",
+        stripFrontMatter: true,
+      })),
+    );
+  }
+
+  const claudeLocalPath = path.join(resolvedDir, DEFAULT_CLAUDE_LOCAL_FILENAME);
+  if (await fileExists(claudeLocalPath)) {
+    entries.push({
+      name: DEFAULT_CLAUDE_LOCAL_FILENAME,
+      filePath: claudeLocalPath,
+      instruction: true,
+      instructionKind: "claude-local",
+      instructionLoadMode: "workspace-root",
+    });
+  }
+
+  if (entries.length === 0) {
+    entries.push({
+      name: DEFAULT_AGENTS_FILENAME,
+      filePath: agentsPath,
+      instruction: true,
+      instructionKind: "agents",
+      instructionLoadMode: "fallback-default",
+    });
+  }
+
+  return entries;
+}
+
+export async function loadWorkspaceBootstrapFiles(
+  dir: string,
+  options?: WorkspaceBootstrapLoadOptions,
+): Promise<WorkspaceBootstrapFile[]> {
+  const resolvedDir = resolveUserPath(dir);
+  const normalizedRuleContextPaths = normalizeRuleContextPaths(options?.ruleContextPaths, resolvedDir);
+  const routeRulesByPath = normalizedRuleContextPaths.length > 0;
+
+  const entries: WorkspaceBootstrapEntry[] = [
+    ...(await resolveInstructionBootstrapEntries(resolvedDir)),
     {
       name: DEFAULT_SOUL_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_SOUL_FILENAME),
@@ -526,21 +976,100 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     entries.push(memoryEntry);
   }
 
+  const loadedEntries = await Promise.all(
+    entries.map(async (entry) => ({
+      entry,
+      loaded: await readWorkspaceFileWithGuards({
+        filePath: entry.filePath,
+        workspaceDir: resolvedDir,
+      }),
+    })),
+  );
+
+  const preparedEntries = loadedEntries.map(({ entry, loaded }) => {
+    const instruction = isInstructionBootstrapEntry(entry);
+    if (!loaded.ok || entry.instructionKind !== "rule" || !routeRulesByPath) {
+      return {
+        entry,
+        loaded,
+        instruction,
+        include: true,
+        rulePaths: undefined as string[] | undefined,
+        matchedRuleContextPaths: undefined as string[] | undefined,
+      };
+    }
+
+    const rulePaths = parseRuleScopePaths(loaded.content);
+    if (rulePaths.length === 0) {
+      return {
+        entry,
+        loaded,
+        instruction,
+        include: true,
+        rulePaths: undefined as string[] | undefined,
+        matchedRuleContextPaths: undefined as string[] | undefined,
+      };
+    }
+
+    const matchedRuleContextPaths = matchRuleContextPaths(rulePaths, normalizedRuleContextPaths);
+    return {
+      entry,
+      loaded,
+      instruction,
+      include: matchedRuleContextPaths.length > 0,
+      rulePaths,
+      matchedRuleContextPaths,
+    };
+  });
+
+  const rootInstructionPaths = new Set(
+    preparedEntries
+      .filter(({ instruction, include, loaded }) => instruction && include && loaded.ok)
+      .map(({ loaded }) => (loaded.ok ? loaded.canonicalPath : ""))
+      .filter((value) => value.length > 0),
+  );
+
   const result: WorkspaceBootstrapFile[] = [];
-  for (const entry of entries) {
-    const loaded = await readWorkspaceFileWithGuards({
-      filePath: entry.filePath,
-      workspaceDir: resolvedDir,
-    });
+  for (const prepared of preparedEntries) {
+    const { entry, loaded, instruction, include, rulePaths, matchedRuleContextPaths } = prepared;
+    if (!include) {
+      continue;
+    }
     if (loaded.ok) {
+      const sourceContent = entry.stripFrontMatter ? stripFrontMatter(loaded.content) : loaded.content;
+      const frontMatterStripped = entry.stripFrontMatter === true && sourceContent !== loaded.content;
+      const content = instruction
+        ? await expandInstructionImports({
+            content: sourceContent,
+            sourcePath: loaded.canonicalPath,
+            workspaceDir: resolvedDir,
+            depth: 0,
+            seenPaths: new Set([loaded.canonicalPath]),
+            suppressPaths: rootInstructionPaths,
+            rootPath: loaded.canonicalPath,
+          })
+        : sourceContent;
       result.push({
         name: entry.name,
         path: entry.filePath,
-        content: loaded.content,
+        content,
         missing: false,
+        instruction,
+        instructionKind: entry.instructionKind,
+        instructionLoadMode: entry.instructionLoadMode,
+        ...(frontMatterStripped ? { frontMatterStripped: true } : {}),
+        ...(rulePaths?.length ? { rulePaths } : {}),
+        ...(matchedRuleContextPaths?.length ? { matchedRuleContextPaths } : {}),
       });
     } else {
-      result.push({ name: entry.name, path: entry.filePath, missing: true });
+      result.push({
+        name: entry.name,
+        path: entry.filePath,
+        missing: true,
+        instruction,
+        instructionKind: entry.instructionKind,
+        instructionLoadMode: entry.instructionLoadMode,
+      });
     }
   }
   return result;
@@ -548,6 +1077,8 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
 
 const MINIMAL_BOOTSTRAP_ALLOWLIST = new Set([
   DEFAULT_AGENTS_FILENAME,
+  DEFAULT_CLAUDE_FILENAME,
+  DEFAULT_CLAUDE_LOCAL_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
@@ -561,7 +1092,7 @@ export function filterBootstrapFilesForSession(
   if (!sessionKey || (!isSubagentSessionKey(sessionKey) && !isCronSessionKey(sessionKey))) {
     return files;
   }
-  return files.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
+  return files.filter((file) => file.instruction === true || MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
 }
 
 export async function loadExtraBootstrapFiles(
@@ -604,6 +1135,12 @@ export async function loadExtraBootstrapFilesWithDiagnostics(
 
   const files: WorkspaceBootstrapFile[] = [];
   const diagnostics: ExtraBootstrapLoadDiagnostic[] = [];
+  const loadedEntries: Array<{
+    baseName: string;
+    filePath: string;
+    loaded: WorkspaceGuardedReadResult;
+    instruction: boolean;
+  }> = [];
   for (const relPath of resolvedPaths) {
     const filePath = path.resolve(resolvedDir, relPath);
     // Only load files whose basename is a recognized bootstrap filename
@@ -620,12 +1157,44 @@ export async function loadExtraBootstrapFilesWithDiagnostics(
       filePath,
       workspaceDir: resolvedDir,
     });
+    loadedEntries.push({
+      baseName,
+      filePath,
+      loaded,
+      instruction: isInstructionBootstrapFileName(baseName as WorkspaceBootstrapFileName),
+    });
+  }
+
+  const rootInstructionPaths = new Set(
+    loadedEntries
+      .filter(({ instruction, loaded }) => instruction && loaded.ok)
+      .map(({ loaded }) => (loaded.ok ? loaded.canonicalPath : ""))
+      .filter((value) => value.length > 0),
+  );
+
+  for (const { baseName, filePath, loaded, instruction } of loadedEntries) {
     if (loaded.ok) {
+      const bootstrapName = baseName as WorkspaceBootstrapFileName;
+      const content = instruction
+        ? await expandInstructionImports({
+            content: loaded.content,
+            sourcePath: loaded.canonicalPath,
+            workspaceDir: resolvedDir,
+            depth: 0,
+            seenPaths: new Set([loaded.canonicalPath]),
+            suppressPaths: rootInstructionPaths,
+            rootPath: loaded.canonicalPath,
+          })
+        : loaded.content;
       files.push({
-        name: baseName as WorkspaceBootstrapFileName,
+        name: bootstrapName,
         path: filePath,
-        content: loaded.content,
+        content,
         missing: false,
+        instruction,
+        instructionKind: instruction
+          ? resolveInstructionKindForBootstrapName(bootstrapName)
+          : undefined,
       });
       continue;
     }

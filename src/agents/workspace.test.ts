@@ -6,6 +6,8 @@ import { makeTempWorkspace, writeWorkspaceFile } from "../test-helpers/workspace
 import {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_CLAUDE_FILENAME,
+  DEFAULT_CLAUDE_LOCAL_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
   DEFAULT_MEMORY_FILENAME,
@@ -13,6 +15,7 @@ import {
   DEFAULT_USER_FILENAME,
   ensureAgentWorkspace,
   filterBootstrapFilesForSession,
+  isInstructionBootstrapFile,
   loadWorkspaceBootstrapFiles,
   resolveDefaultAgentWorkspaceDir,
   type WorkspaceBootstrapFile,
@@ -62,6 +65,9 @@ async function expectCompletedWithoutBootstrap(dir: string) {
 function expectSubagentAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
   const names = files.map((file) => file.name);
   expect(names).toContain("AGENTS.md");
+  expect(names).toContain("CLAUDE.md");
+  expect(names).toContain("CLAUDE.local.md");
+  expect(names).toContain(".claude/rules/security.md");
   expect(names).toContain("TOOLS.md");
   expect(names).toContain("SOUL.md");
   expect(names).toContain("IDENTITY.md");
@@ -180,6 +186,9 @@ describe("loadWorkspaceBootstrapFiles", () => {
       [DEFAULT_MEMORY_FILENAME, DEFAULT_MEMORY_ALT_FILENAME].includes(file.name),
     );
 
+  const getInstructionEntries = (files: Awaited<ReturnType<typeof loadWorkspaceBootstrapFiles>>) =>
+    files.filter((file) => isInstructionBootstrapFile(file));
+
   const expectSingleMemoryEntry = (
     files: Awaited<ReturnType<typeof loadWorkspaceBootstrapFiles>>,
     content: string,
@@ -211,6 +220,152 @@ describe("loadWorkspaceBootstrapFiles", () => {
 
     const files = await loadWorkspaceBootstrapFiles(tempDir);
     expect(getMemoryEntries(files)).toHaveLength(0);
+  });
+
+  it("loads CLAUDE.md alongside AGENTS.md when present", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_AGENTS_FILENAME, content: "agents" });
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_FILENAME, content: "claude" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const instructionEntries = getInstructionEntries(files);
+
+    expect(
+      instructionEntries.map((file) => ({ name: file.name, content: file.content, missing: file.missing })),
+    ).toEqual([
+      { name: DEFAULT_AGENTS_FILENAME, content: "agents", missing: false },
+      { name: DEFAULT_CLAUDE_FILENAME, content: "claude", missing: false },
+    ]);
+  });
+
+  it("falls back to .claude/CLAUDE.md when root CLAUDE.md is absent", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(tempDir, ".claude", DEFAULT_CLAUDE_FILENAME), "nested", "utf-8");
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const claudeEntries = files.filter((file) => file.name === DEFAULT_CLAUDE_FILENAME);
+
+    expect(claudeEntries).toHaveLength(1);
+    expect(claudeEntries[0]?.path).toBe(path.join(tempDir, ".claude", DEFAULT_CLAUDE_FILENAME));
+    expect(claudeEntries[0]?.content).toBe("nested");
+    expect(claudeEntries[0]?.instructionKind).toBe("claude-project");
+    expect(claudeEntries[0]?.instructionLoadMode).toBe("nested-fallback");
+  });
+
+  it("loads CLAUDE.local.md after project instruction files", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_FILENAME, content: "project" });
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_LOCAL_FILENAME, content: "local" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const instructionEntries = getInstructionEntries(files);
+
+    expect(instructionEntries.map((file) => file.name)).toEqual([
+      DEFAULT_CLAUDE_FILENAME,
+      DEFAULT_CLAUDE_LOCAL_FILENAME,
+    ]);
+    expect(instructionEntries[1]?.content).toBe("local");
+  });
+
+  it("loads .claude/rules markdown files before CLAUDE.local.md and strips frontmatter", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await fs.mkdir(path.join(tempDir, ".claude", "rules", "nested"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, ".claude", "rules", "01-team.md"),
+      "---\ndescription: Team guidance\n---\n## Session Startup\n\nRead team-checklist.md\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tempDir, ".claude", "rules", "nested", "02-safety.md"),
+      "## Red Lines\n\nNever skip review.\n",
+      "utf-8",
+    );
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_LOCAL_FILENAME, content: "## Local\n\nUse test data.\n" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const instructionEntries = getInstructionEntries(files);
+
+    expect(instructionEntries.map((file) => file.name)).toEqual([
+      ".claude/rules/01-team.md",
+      ".claude/rules/nested/02-safety.md",
+      DEFAULT_CLAUDE_LOCAL_FILENAME,
+    ]);
+    expect(instructionEntries[0]?.content).not.toContain("description: Team guidance");
+    expect(instructionEntries[0]?.content).toContain("Read team-checklist.md");
+    expect(instructionEntries[0]?.instructionKind).toBe("rule");
+    expect(instructionEntries[0]?.instructionLoadMode).toBe("rules-dir");
+    expect(instructionEntries[0]?.frontMatterStripped).toBe(true);
+  });
+
+  it("routes path-scoped rules only when explicit ruleContextPaths match", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await fs.mkdir(path.join(tempDir, ".claude", "rules"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, ".claude", "rules", "01-api.md"),
+      "---\npaths:\n  - src/api/**\n---\n## API Rules\n\nKeep error codes stable.\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tempDir, ".claude", "rules", "02-ui.md"),
+      "---\npaths:\n  - src/ui/**\n---\n## UI Rules\n\nKeep labels concise.\n",
+      "utf-8",
+    );
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir, {
+      ruleContextPaths: ["src/api/routes.ts"],
+    });
+    const instructionEntries = getInstructionEntries(files);
+
+    expect(instructionEntries.map((file) => file.name)).toEqual([".claude/rules/01-api.md"]);
+    expect(instructionEntries[0]?.rulePaths).toEqual(["src/api/**"]);
+    expect(instructionEntries[0]?.matchedRuleContextPaths).toEqual(["src/api/routes.ts"]);
+  });
+
+  it("expands workspace-scoped @path imports in instruction files", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await fs.writeFile(path.join(tempDir, "shared.md"), "## Session Startup\n\nRead shared.md\n", "utf-8");
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_FILENAME, content: "@shared.md" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const claude = files.find((file) => file.name === DEFAULT_CLAUDE_FILENAME);
+
+    expect(claude?.content).toContain("## Session Startup");
+    expect(claude?.content).toContain("Read shared.md");
+  });
+
+  it("suppresses duplicated imports of root instruction files already loaded separately", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_AGENTS_FILENAME, content: "## Session Startup\n\nRead AGENTS\n" });
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_FILENAME, content: "@AGENTS.md\n\n## Claude Code\n\nUse plan mode.\n" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const claude = files.find((file) => file.name === DEFAULT_CLAUDE_FILENAME);
+
+    expect(claude?.content).not.toContain("Read AGENTS");
+    expect(claude?.content).toContain("## Claude Code");
+  });
+
+  it("surfaces import errors for missing files", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_FILENAME, content: "@missing.md" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const claude = files.find((file) => file.name === DEFAULT_CLAUDE_FILENAME);
+
+    expect(claude?.content).toContain("[IMPORT ERROR] @missing.md -> missing or outside workspace");
+  });
+
+  it("surfaces cyclic import errors instead of recursing forever", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-");
+    await fs.writeFile(path.join(tempDir, "a.md"), "@b.md", "utf-8");
+    await fs.writeFile(path.join(tempDir, "b.md"), "@a.md", "utf-8");
+    await writeWorkspaceFile({ dir: tempDir, name: DEFAULT_CLAUDE_FILENAME, content: "@a.md" });
+
+    const files = await loadWorkspaceBootstrapFiles(tempDir);
+    const claude = files.find((file) => file.name === DEFAULT_CLAUDE_FILENAME);
+
+    expect(claude?.content).toContain("[IMPORT ERROR] @a.md -> cyclic import");
   });
 
   it("treats hardlinked bootstrap aliases as missing", async () => {
@@ -248,6 +403,15 @@ describe("loadWorkspaceBootstrapFiles", () => {
 describe("filterBootstrapFilesForSession", () => {
   const mockFiles: WorkspaceBootstrapFile[] = [
     { name: "AGENTS.md", path: "/w/AGENTS.md", content: "", missing: false },
+    { name: "CLAUDE.md", path: "/w/CLAUDE.md", content: "", missing: false },
+    { name: "CLAUDE.local.md", path: "/w/CLAUDE.local.md", content: "", missing: false },
+    {
+      name: ".claude/rules/security.md",
+      path: "/w/.claude/rules/security.md",
+      content: "",
+      missing: false,
+      instruction: true,
+    },
     { name: "SOUL.md", path: "/w/SOUL.md", content: "", missing: false },
     { name: "TOOLS.md", path: "/w/TOOLS.md", content: "", missing: false },
     { name: "IDENTITY.md", path: "/w/IDENTITY.md", content: "", missing: false },

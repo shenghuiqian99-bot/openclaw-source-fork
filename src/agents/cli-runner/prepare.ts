@@ -79,6 +79,7 @@ export async function prepareCliRunContext(
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
+    ruleContextPaths: params.ruleContextPaths,
     warn: makeBootstrapWarn({ sessionLabel, warn: (message) => cliBackendLog.warn(message) }),
   });
   const bootstrapMaxChars = resolveBootstrapMaxChars(params.config);

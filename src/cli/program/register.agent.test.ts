@@ -114,6 +114,30 @@ describe("registerAgentCommands", () => {
     );
   });
 
+  it("forwards repeatable --rule-path values to agent command", async () => {
+    await runCli([
+      "agent",
+      "--message",
+      "hi",
+      "--agent",
+      "ops",
+      "--rule-path",
+      "src/api/routes.ts",
+      "--rule-path",
+      "src/ui/page.tsx",
+    ]);
+
+    expect(agentCliCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "hi",
+        agent: "ops",
+        ruleContextPaths: ["src/api/routes.ts", "src/ui/page.tsx"],
+      }),
+      runtime,
+      { deps: true },
+    );
+  });
+
   it("runs agents add and computes hasFlags based on explicit options", async () => {
     await runCli(["agents", "add", "alpha"]);
     expect(agentsAddCommandMock).toHaveBeenNthCalledWith(

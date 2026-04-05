@@ -29,13 +29,41 @@ describe("loadExtraBootstrapFiles", () => {
     const packageDir = path.join(workspaceDir, "packages", "core");
     await fs.mkdir(packageDir, { recursive: true });
     await fs.writeFile(path.join(packageDir, "TOOLS.md"), "tools", "utf-8");
+    await fs.writeFile(path.join(packageDir, "CLAUDE.local.md"), "local", "utf-8");
     await fs.writeFile(path.join(packageDir, "README.md"), "not bootstrap", "utf-8");
 
     const files = await loadExtraBootstrapFiles(workspaceDir, ["packages/*/*"]);
 
+    expect(files).toHaveLength(2);
+    expect(files.map((file) => file.name)).toEqual(["CLAUDE.local.md", "TOOLS.md"]);
+    expect(files[0]?.content).toBe("local");
+    expect(files[1]?.content).toBe("tools");
+  });
+
+  it("loads nested .claude/CLAUDE.md files from explicit patterns", async () => {
+    const workspaceDir = await createWorkspaceDir("claude");
+    const claudeDir = path.join(workspaceDir, ".claude");
+    await fs.mkdir(claudeDir, { recursive: true });
+    await fs.writeFile(path.join(claudeDir, "CLAUDE.md"), "project guidance", "utf-8");
+
+    const files = await loadExtraBootstrapFiles(workspaceDir, [".claude/CLAUDE.md"]);
+
     expect(files).toHaveLength(1);
-    expect(files[0]?.name).toBe("TOOLS.md");
-    expect(files[0]?.content).toBe("tools");
+    expect(files[0]?.name).toBe("CLAUDE.md");
+    expect(files[0]?.content).toBe("project guidance");
+  });
+
+  it("expands @path imports for extra instruction files", async () => {
+    const workspaceDir = await createWorkspaceDir("imports");
+    const extraDir = path.join(workspaceDir, "packages", "docs");
+    await fs.mkdir(extraDir, { recursive: true });
+    await fs.writeFile(path.join(extraDir, "rules.md"), "## Red Lines\n\nNever skip validation.\n", "utf-8");
+    await fs.writeFile(path.join(extraDir, "CLAUDE.md"), "@rules.md", "utf-8");
+
+    const files = await loadExtraBootstrapFiles(workspaceDir, ["packages/docs/CLAUDE.md"]);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]?.content).toContain("Never skip validation");
   });
 
   it("keeps path-traversal attempts outside workspace excluded", async () => {

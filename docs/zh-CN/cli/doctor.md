@@ -34,6 +34,7 @@ openclaw doctor --deep
 
 - 交互式提示（如钥匙串/OAuth 修复）仅在 stdin 是 TTY 且**未**设置 `--non-interactive` 时运行。无头运行（cron、Telegram、无终端）将跳过提示。
 - `--fix`（`--repair` 的别名）会将备份写入 `~/.openclaw/openclaw.json.bak`，并删除未知的配置键，同时列出每个删除项。
+- `openclaw doctor --deep` 现在会附带 `Instruction diagnostics` 说明，汇总各 agent 最近一次持久化的 `systemPromptReport.instructionFiles`；若存在路径作用域规则，也会展示 `paths` / `matched` 元数据，且不会为诊断额外触发新的 agent run。
 
 ## macOS：`launchctl` 环境变量覆盖
 

@@ -126,4 +126,37 @@ describe("resolveBootstrapContextForRun", () => {
 
     expect(files).toEqual([]);
   });
+
+  it("bypasses cached bootstrap snapshots when ruleContextPaths differ per run", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    await fs.mkdir(path.join(workspaceDir, ".claude", "rules"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".claude", "rules", "01-api.md"),
+      "---\npaths:\n  - src/api/**\n---\napi rule\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, ".claude", "rules", "02-ui.md"),
+      "---\npaths:\n  - src/ui/**\n---\nui rule\n",
+      "utf8",
+    );
+
+    const first = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "agent:main:test-path-routing",
+      ruleContextPaths: ["src/api/routes.ts"],
+    });
+    const second = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "agent:main:test-path-routing",
+      ruleContextPaths: ["src/ui/page.tsx"],
+    });
+
+    expect(first.filter((file) => file.instructionKind === "rule").map((file) => file.name)).toEqual([
+      ".claude/rules/01-api.md",
+    ]);
+    expect(second.filter((file) => file.instructionKind === "rule").map((file) => file.name)).toEqual([
+      ".claude/rules/02-ui.md",
+    ]);
+  });
 });

@@ -142,6 +142,10 @@ import {
   LogsTailParamsSchema,
   type LogsTailResult,
   LogsTailResultSchema,
+  type InstructionsDiagnosticsParams,
+  InstructionsDiagnosticsParamsSchema,
+  type InstructionsDiagnosticsResult,
+  InstructionsDiagnosticsResultSchema,
   type ModelsListParams,
   ModelsListParamsSchema,
   type NodeDescribeParams,
@@ -454,6 +458,12 @@ export const validateExecApprovalsNodeSetParams = ajv.compile<ExecApprovalsNodeS
   ExecApprovalsNodeSetParamsSchema,
 );
 export const validateLogsTailParams = ajv.compile<LogsTailParams>(LogsTailParamsSchema);
+export const validateInstructionsDiagnosticsParams = ajv.compile<InstructionsDiagnosticsParams>(
+  InstructionsDiagnosticsParamsSchema,
+);
+export const validateInstructionsDiagnosticsResult = ajv.compile<InstructionsDiagnosticsResult>(
+  InstructionsDiagnosticsResultSchema,
+);
 export const validateChatHistoryParams = ajv.compile(ChatHistoryParamsSchema);
 export const validateChatSendParams = ajv.compile(ChatSendParamsSchema);
 export const validateChatAbortParams = ajv.compile<ChatAbortParams>(ChatAbortParamsSchema);
@@ -601,6 +611,8 @@ export {
   CronRunsParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
+  InstructionsDiagnosticsParamsSchema,
+  InstructionsDiagnosticsResultSchema,
   ChatHistoryParamsSchema,
   ChatSendParamsSchema,
   ChatInjectParamsSchema,
@@ -720,6 +732,8 @@ export type {
   ExecApprovalsSnapshot,
   LogsTailParams,
   LogsTailResult,
+  InstructionsDiagnosticsParams,
+  InstructionsDiagnosticsResult,
   PollParams,
   UpdateRunParams,
   ChatInjectParams,

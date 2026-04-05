@@ -782,8 +782,8 @@ Injects additional bootstrap files (for example monorepo-local `AGENTS.md` / `TO
 
 - Paths are resolved relative to workspace.
 - Files must stay inside workspace (realpath-checked).
-- Only recognized bootstrap basenames are loaded (`AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, `MEMORY.md`, `memory.md`).
-- For subagent/cron sessions a narrower allowlist applies (`AGENTS.md`, `TOOLS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`).
+- Only recognized bootstrap basenames are loaded (`AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, `MEMORY.md`, `memory.md`).
+- For subagent/cron sessions a narrower allowlist applies (`AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `TOOLS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`).
 
 **Enable**:
 

@@ -51,12 +51,14 @@ export function resolveSessionKeyForRequest(opts: {
   const sessionCfg = opts.cfg.session;
   const scope = sessionCfg?.scope ?? "per-sender";
   const mainKey = normalizeMainKey(sessionCfg?.mainKey);
-  const explicitSessionKey =
-    opts.sessionKey?.trim() ||
-    resolveExplicitAgentSessionKey({
-      cfg: opts.cfg,
-      agentId: opts.agentId,
-    });
+  const explicitSessionKey = opts.sessionKey?.trim();
+  const shouldUseAgentMainSession = !explicitSessionKey && !opts.to?.trim() && !opts.sessionId?.trim();
+  const defaultAgentSessionKey = shouldUseAgentMainSession
+    ? resolveExplicitAgentSessionKey({
+        cfg: opts.cfg,
+        agentId: opts.agentId,
+      })
+    : undefined;
   const storeAgentId = resolveAgentIdFromSessionKey(explicitSessionKey);
   const storePath = resolveStorePath(sessionCfg?.store, {
     agentId: storeAgentId,
@@ -65,7 +67,7 @@ export function resolveSessionKeyForRequest(opts: {
 
   const ctx: MsgContext | undefined = opts.to?.trim() ? { From: opts.to } : undefined;
   let sessionKey: string | undefined =
-    explicitSessionKey ?? (ctx ? resolveSessionKey(scope, ctx, mainKey) : undefined);
+    explicitSessionKey ?? defaultAgentSessionKey ?? (ctx ? resolveSessionKey(scope, ctx, mainKey) : undefined);
 
   // If a session id was provided, prefer to re-use its entry (by id) even when no key was derived.
   // When duplicates exist across agent stores, pick the same deterministic best match used by the

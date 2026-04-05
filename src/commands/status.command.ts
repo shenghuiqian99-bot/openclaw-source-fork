@@ -202,14 +202,16 @@ export async function statusCommand(
     gitTag: update.git?.tag ?? null,
     gitBranch: update.git?.branch ?? null,
   });
+  const instructionDiagnostics = summary.instructionDiagnostics;
 
   if (opts.json) {
     const [daemon, nodeDaemon] = await Promise.all([
       getDaemonStatusSummary(),
       getNodeDaemonStatusSummary(),
     ]);
+    const { instructionDiagnostics: _ignoredInstructionDiagnostics, ...summaryPayload } = summary;
     writeRuntimeJson(runtime, {
-      ...summary,
+      ...summaryPayload,
       os: osSummary,
       update,
       updateChannel: channelInfo.channel,
@@ -236,6 +238,14 @@ export async function statusCommand(
         count: pluginCompatibility.length,
         warnings: pluginCompatibility,
       },
+      ...(opts.deep || opts.all
+        ? {
+            instructionDiagnostics: instructionDiagnostics ?? {
+              reports: 0,
+              byAgent: [],
+            },
+          }
+        : {}),
       ...(health || usage || lastHeartbeat ? { health, usage, lastHeartbeat } : {}),
     });
     return;
@@ -649,6 +659,76 @@ export async function statusCommand(
             ],
     }).trimEnd(),
   );
+
+  if (opts.deep) {
+    runtime.log("");
+    runtime.log(theme.heading("Instructions"));
+    const byAgent = instructionDiagnostics?.byAgent ?? [];
+    if (byAgent.length === 0) {
+      runtime.log(
+        muted(
+          "No recent instruction diagnostics yet. Run an agent turn first, then inspect /context detail or rerun status --deep.",
+        ),
+      );
+    } else {
+      runtime.log(
+        renderTable({
+          width: tableWidth,
+          columns: [
+            { key: "Agent", header: "Agent", minWidth: 10 },
+            { key: "Age", header: "Age", minWidth: 9 },
+            { key: "Files", header: "Files", minWidth: 18 },
+            { key: "Detail", header: "Detail", flex: true, minWidth: 36 },
+          ],
+          rows: byAgent.map((report) => {
+            const orderedEntries = [...report.entries].toSorted((left, right) => {
+              const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER;
+              const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER;
+              return leftOrder - rightOrder || left.name.localeCompare(right.name);
+            });
+            const shownEntries = orderedEntries.slice(0, 3).map((entry) => {
+              const detailParts = [`${entry.kind}/${entry.loadMode}`];
+              if (entry.rulePaths?.length) {
+                detailParts.push(`paths=${entry.rulePaths.join(",")}`);
+              }
+              if (entry.matchedRuleContextPaths?.length) {
+                detailParts.push(`matched=${entry.matchedRuleContextPaths.join(",")}`);
+              }
+              if (entry.importErrors) {
+                detailParts.push(`import=${entry.importErrors}`);
+              }
+              if (entry.missing) {
+                detailParts.push("missing");
+              }
+              return `${entry.name} (${detailParts.join(" ")})`;
+            });
+            const detail = [
+              shownEntries.join(" · "),
+              report.entries.length > shownEntries.length
+                ? `+${report.entries.length - shownEntries.length} more`
+                : null,
+            ]
+              .filter((value): value is string => Boolean(value && value.trim().length > 0))
+              .join(" · ");
+            const files = [
+              `${report.loaded}/${report.total} loaded`,
+              report.missing > 0 ? `${report.missing} missing` : null,
+              report.importErrorCount > 0 ? `${report.importErrorCount} import err` : null,
+            ]
+              .filter((value): value is string => Boolean(value))
+              .join(" · ");
+            return {
+              Agent: report.agentId,
+              Age: report.updatedAt ? formatTimeAgo(report.age) : "unknown",
+              Files: files,
+              Detail: detail ? shortenText(detail, 180) : muted("no instruction files recorded"),
+            };
+          }),
+        }).trimEnd(),
+      );
+      runtime.log(muted("Latest known instruction diagnostics per agent session."));
+    }
+  }
 
   if (summary.queuedSystemEvents.length > 0) {
     runtime.log("");

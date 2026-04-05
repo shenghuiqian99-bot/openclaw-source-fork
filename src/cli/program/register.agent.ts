@@ -27,6 +27,12 @@ export function registerAgentCommands(program: Command, args: { agentChannelOpti
     .option("-t, --to <number>", "Recipient number in E.164 used to derive the session key")
     .option("--session-id <id>", "Use an explicit session id")
     .option("--agent <id>", "Agent id (overrides routing bindings)")
+    .option(
+      "--rule-path <path>",
+      "Workspace-relative or absolute path used for path-scoped instruction routing (repeatable)",
+      collectOption,
+      [] as string[],
+    )
     .option("--thinking <level>", "Thinking level: off | minimal | low | medium | high | xhigh")
     .option("--verbose <on|off>", "Persist agent verbose level for the session")
     .option(
@@ -63,6 +69,10 @@ ${formatHelpExamples([
     'openclaw agent --to +15555550123 --message "Trace logs" --verbose on --json',
     "Enable verbose logging and JSON output.",
   ],
+  [
+    'openclaw agent --agent ops --message "Review API route" --rule-path src/api/routes.ts',
+    "Route path-scoped rules using an explicit workspace path.",
+  ],
   ['openclaw agent --to +15555550123 --message "Summon reply" --deliver', "Deliver reply."],
   [
     'openclaw agent --agent ops --message "Generate report" --deliver --reply-channel slack --reply-to "#reports"',
@@ -77,8 +87,20 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
       setVerbose(verboseLevel === "on");
       // Build default deps (keeps parity with other commands; future-proofing).
       const deps = createDefaultDeps();
+      const ruleContextPaths = Array.isArray(opts.rulePath)
+        ? (opts.rulePath as string[]).filter(
+            (value): value is string => typeof value === "string" && value.trim().length > 0,
+          )
+        : undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
-        await agentCliCommand(opts, defaultRuntime, deps);
+        await agentCliCommand(
+          {
+            ...opts,
+            ruleContextPaths: ruleContextPaths?.length ? ruleContextPaths : undefined,
+          },
+          defaultRuntime,
+          deps,
+        );
       });
     });
 

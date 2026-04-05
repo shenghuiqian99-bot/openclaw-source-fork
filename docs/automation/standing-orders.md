@@ -43,7 +43,7 @@ Each program specifies:
 The agent loads these instructions every session via the workspace bootstrap files (see [Agent Workspace](/concepts/agent-workspace) for the full list of auto-injected files) and executes against them, combined with [cron jobs](/automation/cron-jobs) for time-based enforcement.
 
 <Tip>
-Put standing orders in `AGENTS.md` to guarantee they're loaded every session. The workspace bootstrap automatically injects `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, and `MEMORY.md` — but not arbitrary files in subdirectories.
+Put standing orders in `AGENTS.md` to guarantee they're loaded every session. If you share the same project with Claude Code, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, and `.claude/rules/**/*.md` are also recognized as instruction sources. The workspace bootstrap still does not auto-load arbitrary Markdown files in subdirectories outside that Claude-compatible rules directory unless you wire them in explicitly.
 </Tip>
 
 ## Anatomy of a Standing Order

@@ -23,7 +23,7 @@ Context is _not the same thing_ as “memory”: memory can be stored on disk an
 
 - `/status` → quick “how full is my window?” view + session settings.
 - `/context list` → what’s injected + rough sizes (per file + totals).
-- `/context detail` → deeper breakdown: per-file, per-tool schema sizes, per-skill entry sizes, and system prompt size.
+- `/context detail` → deeper breakdown: per-file, per-tool schema sizes, per-skill entry sizes, system prompt size, and instruction-load diagnostics for the active workspace rules.
 - `/usage tokens` → append per-reply usage footer to normal replies.
 - `/compact` → summarize older history into a compact entry to free window space.
 
@@ -65,6 +65,10 @@ Session tokens (cached): 14,250 total / ctx=32,000
 ```
 🧠 Context breakdown (detailed)
 …
+Instruction files:
+- CLAUDE.md: LOADED | kind=Claude project | mode=nested-fallback | order=#1 | path=/workspace/.claude/CLAUDE.md
+- .claude/rules/01-team.md: LOADED | kind=rule | mode=rules-dir | order=#2 | path=/workspace/.claude/rules/01-team.md | frontmatter stripped | paths=src/api/** | matched=src/api/routes.ts
+
 Top skills (prompt entry size):
 - frontend-design: 412 chars (~103 tok)
 - oracle: 401 chars (~101 tok)
@@ -75,6 +79,8 @@ Top tools (schema size):
 - exec: 6,240 chars (~1,560 tok)
 … (+N more tools)
 ```
+
+When routed rule loading is active, `/context detail` shows both the rule's declared `paths` globs and the explicit `ruleContextPaths` entry that matched.
 
 ## What counts toward the context window
 
@@ -166,6 +172,7 @@ pluggable interface, lifecycle hooks, and configuration.
 
 `/context` prefers the latest **run-built** system prompt report when available:
 
+- active instruction files (kind, load mode, order, rule frontmatter stripping, and import-error counts)
 - `System prompt (run)` = captured from the last embedded (tool-capable) run and persisted in the session store.
 - `System prompt (estimate)` = computed on the fly when no run report exists (or when running via a CLI backend that doesn’t generate the report).
 

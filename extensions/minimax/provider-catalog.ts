@@ -3,6 +3,7 @@ import type {
   ModelProviderConfig,
 } from "openclaw/plugin-sdk/provider-model-shared";
 import {
+  isMiniMaxVisionModelId,
   MINIMAX_DEFAULT_MODEL_ID,
   MINIMAX_TEXT_MODEL_CATALOG,
   MINIMAX_TEXT_MODEL_ORDER,
@@ -40,7 +41,10 @@ function buildMinimaxTextModel(params: {
   name: string;
   reasoning: boolean;
 }): ModelDefinitionConfig {
-  return buildMinimaxModel({ ...params, input: ["text"] });
+  return buildMinimaxModel({
+    ...params,
+    input: isMiniMaxVisionModelId(params.id) ? ["text", "image"] : ["text"],
+  });
 }
 
 function buildMinimaxCatalog(): ModelDefinitionConfig[] {

@@ -23,6 +23,7 @@ import {
   maybeRepairGatewayServiceConfig,
   maybeScanExtraGatewayServices,
 } from "../commands/doctor-gateway-services.js";
+import { noteInstructionDiagnosticsHealth } from "../commands/doctor-instructions.js";
 import { noteMemorySearchHealth } from "../commands/doctor-memory-search.js";
 import {
   noteMacLaunchAgentOverrides,
@@ -386,6 +387,10 @@ async function runBootstrapSizeHealth(ctx: DoctorHealthFlowContext): Promise<voi
   await noteBootstrapFileSize(ctx.cfg);
 }
 
+async function runInstructionDiagnosticsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
+  noteInstructionDiagnosticsHealth(ctx.cfg);
+}
+
 async function runShellCompletionHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   await doctorShellCompletion(ctx.runtime, ctx.prompter, {
     nonInteractive: ctx.options.nonInteractive,
@@ -559,6 +564,11 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       id: "doctor:bootstrap-size",
       label: "Bootstrap size",
       run: runBootstrapSizeHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:instruction-diagnostics",
+      label: "Instruction diagnostics",
+      run: runInstructionDiagnosticsHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:shell-completion",

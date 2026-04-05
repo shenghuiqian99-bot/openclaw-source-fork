@@ -18,6 +18,40 @@ function formatCharsAndTokens(chars: number): string {
   return `${formatInt(chars)} chars (~${formatInt(estimateTokensFromChars(chars))} tok)`;
 }
 
+function formatInstructionKind(
+  kind: NonNullable<SessionSystemPromptReport["instructionFiles"]>["entries"][number]["kind"],
+): string {
+  switch (kind) {
+    case "agents":
+      return "AGENTS";
+    case "claude-project":
+      return "Claude project";
+    case "claude-local":
+      return "Claude local";
+    case "rule":
+      return "rule";
+    default:
+      return "unknown";
+  }
+}
+
+function formatInstructionLoadMode(
+  mode: NonNullable<SessionSystemPromptReport["instructionFiles"]>["entries"][number]["loadMode"],
+): string {
+  switch (mode) {
+    case "workspace-root":
+      return "workspace-root";
+    case "nested-fallback":
+      return "nested-fallback";
+    case "fallback-default":
+      return "fallback-default";
+    case "rules-dir":
+      return "rules-dir";
+    default:
+      return "unknown";
+  }
+}
+
 function parseContextArgs(commandBodyNormalized: string): string {
   if (commandBodyNormalized === "/context") {
     return "";
@@ -126,6 +160,32 @@ export async function buildContextReply(params: HandleCommandsParams): Promise<R
   const skillNameSet = new Set(report.skills.entries.map((s) => s.name));
   const skillNames = Array.from(skillNameSet);
   const toolNames = report.tools.entries.map((t) => t.name);
+  const instructionSummaryLine = report.instructionFiles
+    ? `Instructions: ${report.instructionFiles.loaded}/${report.instructionFiles.total} loaded, ${report.instructionFiles.missing} missing, ${report.instructionFiles.importErrorCount} import errors`
+    : "Instructions: unavailable";
+  const instructionDetailLines =
+    report.instructionFiles?.entries.map((entry) => {
+      const parts = [
+        entry.missing ? "MISSING" : "LOADED",
+        `kind=${formatInstructionKind(entry.kind)}`,
+        `mode=${formatInstructionLoadMode(entry.loadMode)}`,
+        `order=#${entry.order ?? 0}`,
+        `path=${entry.path}`,
+      ];
+      if (entry.frontMatterStripped) {
+        parts.push("frontmatter stripped");
+      }
+      if (entry.rulePaths?.length) {
+        parts.push(`paths=${entry.rulePaths.join(",")}`);
+      }
+      if (entry.matchedRuleContextPaths?.length) {
+        parts.push(`matched=${entry.matchedRuleContextPaths.join(",")}`);
+      }
+      if ((entry.importErrors ?? 0) > 0) {
+        parts.push(`${entry.importErrors} import error(s)`);
+      }
+      return `- ${entry.name}: ${parts.join(" | ")}`;
+    }) ?? [];
   const formatNameList = (names: string[], cap: number) =>
     names.length <= cap
       ? names.join(", ")
@@ -199,6 +259,8 @@ export async function buildContextReply(params: HandleCommandsParams): Promise<R
     systemPromptLine,
     ...(bootstrapWarningLines.length ? ["", ...bootstrapWarningLines] : []),
     "",
+    instructionSummaryLine,
+    "",
     "Injected workspace files:",
     ...fileLines,
     "",
@@ -229,6 +291,9 @@ export async function buildContextReply(params: HandleCommandsParams): Promise<R
       text: [
         "🧠 Context breakdown (detailed)",
         ...sharedContextLines,
+        ...(instructionDetailLines.length
+          ? ["Instruction files:", ...instructionDetailLines, ""]
+          : []),
         ...(perSkill.lines.length ? ["Top skills (prompt entry size):", ...perSkill.lines] : []),
         ...(perSkill.omitted ? [`… (+${perSkill.omitted} more skills)`] : []),
         "",

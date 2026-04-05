@@ -12,9 +12,7 @@ function formatMediaAttachedLine(params: {
       ? `[media attached ${params.index}/${params.total}: `
       : "[media attached: ";
   const typePart = params.type?.trim() ? ` (${params.type.trim()})` : "";
-  const urlRaw = params.url?.trim();
-  const urlPart = urlRaw ? ` | ${urlRaw}` : "";
-  return `${prefix}${params.path}${typePart}${urlPart}]`;
+  return `${prefix}${params.path}${typePart}]`;
 }
 
 // Common audio file extensions for transcription detection

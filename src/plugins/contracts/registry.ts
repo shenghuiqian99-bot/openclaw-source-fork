@@ -4,6 +4,7 @@ import {
   BUNDLED_PLUGIN_CONTRACT_SNAPSHOTS,
   BUNDLED_PROVIDER_PLUGIN_IDS,
   BUNDLED_SPEECH_PLUGIN_IDS,
+  BUNDLED_VIDEO_GENERATION_PLUGIN_IDS,
   BUNDLED_WEB_SEARCH_PLUGIN_IDS,
 } from "../bundled-capability-metadata.js";
 import { loadBundledCapabilityRuntimeRegistry } from "../bundled-capability-runtime.js";
@@ -12,12 +13,14 @@ import type {
   MediaUnderstandingProviderPlugin,
   ProviderPlugin,
   SpeechProviderPlugin,
+  VideoGenerationProviderPlugin,
   WebSearchProviderPlugin,
 } from "../types.js";
 import {
   loadVitestImageGenerationProviderContractRegistry,
   loadVitestMediaUnderstandingProviderContractRegistry,
   loadVitestSpeechProviderContractRegistry,
+  loadVitestVideoGenerationProviderContractRegistry,
 } from "./speech-vitest-registry.js";
 
 type BundledCapabilityRuntimeRegistry = ReturnType<typeof loadBundledCapabilityRuntimeRegistry>;
@@ -36,6 +39,7 @@ type SpeechProviderContractEntry = CapabilityContractEntry<SpeechProviderPlugin>
 type MediaUnderstandingProviderContractEntry =
   CapabilityContractEntry<MediaUnderstandingProviderPlugin>;
 type ImageGenerationProviderContractEntry = CapabilityContractEntry<ImageGenerationProviderPlugin>;
+type VideoGenerationProviderContractEntry = CapabilityContractEntry<VideoGenerationProviderPlugin>;
 
 type PluginRegistrationContractEntry = {
   pluginId: string;
@@ -44,6 +48,7 @@ type PluginRegistrationContractEntry = {
   speechProviderIds: string[];
   mediaUnderstandingProviderIds: string[];
   imageGenerationProviderIds: string[];
+  videoGenerationProviderIds: string[];
   webSearchProviderIds: string[];
   toolNames: string[];
 };
@@ -87,6 +92,8 @@ let mediaUnderstandingProviderContractRegistryCache:
   | MediaUnderstandingProviderContractEntry[]
   | null = null;
 let imageGenerationProviderContractRegistryCache: ImageGenerationProviderContractEntry[] | null =
+  null;
+let videoGenerationProviderContractRegistryCache: VideoGenerationProviderContractEntry[] | null =
   null;
 const providerContractPluginIdsByProviderId = createProviderContractPluginIdsByProviderId();
 
@@ -346,6 +353,21 @@ function loadImageGenerationProviderContractRegistry(): ImageGenerationProviderC
   return imageGenerationProviderContractRegistryCache;
 }
 
+function loadVideoGenerationProviderContractRegistry(): VideoGenerationProviderContractEntry[] {
+  if (!videoGenerationProviderContractRegistryCache) {
+    videoGenerationProviderContractRegistryCache = process.env.VITEST
+      ? loadVitestVideoGenerationProviderContractRegistry()
+      : loadBundledCapabilityRuntimeRegistry({
+          pluginIds: BUNDLED_VIDEO_GENERATION_PLUGIN_IDS,
+          pluginSdkResolution: "dist",
+        }).videoGenerationProviders.map((entry) => ({
+          pluginId: entry.pluginId,
+          provider: entry.provider,
+        }));
+  }
+  return videoGenerationProviderContractRegistryCache;
+}
+
 function createLazyArrayView<T>(load: () => T[]): T[] {
   return new Proxy([] as T[], {
     get(_target, prop) {
@@ -451,6 +473,9 @@ export const mediaUnderstandingProviderContractRegistry: MediaUnderstandingProvi
 export const imageGenerationProviderContractRegistry: ImageGenerationProviderContractEntry[] =
   createLazyArrayView(loadImageGenerationProviderContractRegistry);
 
+export const videoGenerationProviderContractRegistry: VideoGenerationProviderContractEntry[] =
+  createLazyArrayView(loadVideoGenerationProviderContractRegistry);
+
 function loadPluginRegistrationContractRegistry(): PluginRegistrationContractEntry[] {
   return BUNDLED_PLUGIN_CONTRACT_SNAPSHOTS.map((entry) => ({
     pluginId: entry.pluginId,
@@ -459,6 +484,7 @@ function loadPluginRegistrationContractRegistry(): PluginRegistrationContractEnt
     speechProviderIds: uniqueStrings(entry.speechProviderIds),
     mediaUnderstandingProviderIds: uniqueStrings(entry.mediaUnderstandingProviderIds),
     imageGenerationProviderIds: uniqueStrings(entry.imageGenerationProviderIds),
+    videoGenerationProviderIds: uniqueStrings(entry.videoGenerationProviderIds),
     webSearchProviderIds: uniqueStrings(entry.webSearchProviderIds),
     toolNames: uniqueStrings(entry.toolNames),
   }));

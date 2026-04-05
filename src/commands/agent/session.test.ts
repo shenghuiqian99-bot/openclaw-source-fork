@@ -143,6 +143,39 @@ describe("resolveSessionKeyForRequest", () => {
     expect(result.sessionKey).toBe("agent:main:main");
   });
 
+  it("lets --session-id override the implicit main session from --agent", async () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:main": { sessionId: "other-session-id", updatedAt: 0 },
+      "agent:main:resume-target": { sessionId: "target-session-id", updatedAt: 0 },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      agentId: "main",
+      sessionId: "target-session-id",
+    });
+
+    expect(result.sessionKey).toBe("agent:main:resume-target");
+  });
+
+  it("lets --to and --session-id override the implicit main session from --agent", async () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:main": { sessionId: "other-session-id", updatedAt: 0 },
+      "agent:main:resume-target": { sessionId: "target-session-id", updatedAt: 0 },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      agentId: "main",
+      to: "+15551234567",
+      sessionId: "target-session-id",
+    });
+
+    expect(result.sessionKey).toBe("agent:main:resume-target");
+  });
+
   it("searches other stores when --to derives a key that does not match --session-id", async () => {
     setupMainAndMybotStorePaths();
     mockStoresByPath({

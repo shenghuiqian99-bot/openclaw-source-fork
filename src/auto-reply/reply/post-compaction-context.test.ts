@@ -70,6 +70,52 @@ Not relevant.
     expect(result).not.toContain("Other Section");
   });
 
+  it("extracts compatible sections from CLAUDE.md when AGENTS.md is absent", async () => {
+    const content = `# Claude Rules
+
+## Session Startup
+
+Read docs/ops.md.
+`;
+    fs.writeFileSync(path.join(tmpDir, "CLAUDE.md"), content);
+    const result = await readPostCompactionContext(tmpDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("docs/ops.md");
+    expect(result).toContain("workspace instruction files");
+  });
+
+  it("reads .claude/CLAUDE.md as a fallback project instruction file", async () => {
+    fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, ".claude", "CLAUDE.md"),
+      "## Red Lines\n\nNever deploy on Friday.\n",
+    );
+    const result = await readPostCompactionContext(tmpDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Never deploy on Friday");
+  });
+
+  it("reads .claude/rules markdown files as compatible instruction sources", async () => {
+    fs.mkdirSync(path.join(tmpDir, ".claude", "rules"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, ".claude", "rules", "security.md"),
+      "---\ndescription: Security\n---\n## Red Lines\n\nNever skip review.\n",
+    );
+    const result = await readPostCompactionContext(tmpDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Never skip review");
+    expect(result).not.toContain("description: Security");
+  });
+
+  it("combines sections across AGENTS.md and CLAUDE.local.md", async () => {
+    fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), "## Session Startup\n\nRead plan.md.\n");
+    fs.writeFileSync(path.join(tmpDir, "CLAUDE.local.md"), "## Red Lines\n\nDo not skip tests.\n");
+    const result = await readPostCompactionContext(tmpDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Read plan.md");
+    expect(result).toContain("Do not skip tests");
+  });
+
   it("extracts Red Lines section", async () => {
     const content = `# Rules
 
@@ -208,6 +254,18 @@ Never do Y.
       const outside = path.join(tmpDir, "outside-secret.txt");
       fs.writeFileSync(outside, "secret");
       fs.linkSync(outside, path.join(tmpDir, "AGENTS.md"));
+
+      const result = await readPostCompactionContext(tmpDir);
+      expect(result).toBeNull();
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "returns null when CLAUDE.md is a symlink escaping workspace",
+    async () => {
+      const outside = path.join(tmpDir, "outside-claude.txt");
+      fs.writeFileSync(outside, "secret");
+      fs.symlinkSync(outside, path.join(tmpDir, "CLAUDE.md"));
 
       const result = await readPostCompactionContext(tmpDir);
       expect(result).toBeNull();

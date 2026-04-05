@@ -1938,6 +1938,34 @@ async function expectWorkspaceSummaryEmptyForAgentsAlias(
 }
 
 describe("readWorkspaceContextForSummary", () => {
+  it("reads compatible sections from CLAUDE.md when AGENTS.md is absent", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-compaction-summary-"));
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(root);
+    try {
+      fs.writeFileSync(path.join(root, "CLAUDE.md"), "## Session Startup\n\nRead docs/summary.md\n");
+      await expect(readWorkspaceContextForSummary()).resolves.toContain("docs/summary.md");
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reads compatible sections from .claude/rules when root instruction files are absent", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-compaction-summary-"));
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(root);
+    try {
+      fs.mkdirSync(path.join(root, ".claude", "rules"), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, ".claude", "rules", "startup.md"),
+        "## Session Startup\n\nRead docs/rules-summary.md\n",
+      );
+      await expect(readWorkspaceContextForSummary()).resolves.toContain("docs/rules-summary.md");
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.runIf(process.platform !== "win32")(
     "returns empty when AGENTS.md is a symlink escape",
     async () => {
@@ -1953,6 +1981,23 @@ describe("readWorkspaceContextForSummary", () => {
       await expectWorkspaceSummaryEmptyForAgentsAlias((outside, agentsPath) => {
         fs.linkSync(outside, agentsPath);
       });
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "returns empty when CLAUDE.md is a symlink escape",
+    async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-compaction-summary-"));
+      const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(root);
+      try {
+        const outside = path.join(root, "outside-secret.txt");
+        fs.writeFileSync(outside, "secret");
+        fs.symlinkSync(outside, path.join(root, "CLAUDE.md"));
+        await expect(readWorkspaceContextForSummary()).resolves.toBe("");
+      } finally {
+        cwdSpy.mockRestore();
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     },
   );
 });

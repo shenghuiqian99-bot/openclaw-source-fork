@@ -294,6 +294,40 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   return identity?.avatarUrl;
 }
 
+function copyDebugTextToClipboard(state: AppViewState, successMessage: string, text: string) {
+  state.debugInstructionDiagnosticsNotice = null;
+  const clipboard = globalThis.navigator?.clipboard;
+  if (!clipboard?.writeText) {
+    state.debugInstructionDiagnosticsNotice = "Clipboard API unavailable in this browser.";
+    return;
+  }
+  void clipboard
+    .writeText(text)
+    .then(() => {
+      state.debugInstructionDiagnosticsNotice = successMessage;
+    })
+    .catch((err) => {
+      state.debugInstructionDiagnosticsNotice = `Copy failed: ${String(err)}`;
+    });
+}
+
+function setInstructionDiagnosticsManualRpc(state: AppViewState, filters: Record<string, string>) {
+  state.debugCallMethod = "instructions.diagnostics";
+  state.debugCallParams = JSON.stringify(filters, null, 2);
+  state.debugCallError = null;
+  state.debugCallResult = null;
+  state.debugInstructionDiagnosticsNotice = "Loaded diagnostics query into Manual RPC.";
+}
+
+async function callInstructionDiagnosticsManualRpc(
+  state: AppViewState,
+  filters: import("./types.js").InstructionDiagnosticsFilters,
+) {
+  setInstructionDiagnosticsManualRpc(state, filters);
+  state.debugInstructionDiagnosticsNotice = null;
+  await callDebugMethod(state);
+}
+
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -1934,6 +1968,14 @@ export function renderApp(state: AppViewState) {
               m.renderDebug({
                 loading: state.debugLoading,
                 status: state.debugStatus,
+                instructionDiagnostics: state.debugInstructionDiagnostics,
+                instructionDiagnosticsError: state.debugInstructionDiagnosticsError,
+                instructionDiagnosticsNotice: state.debugInstructionDiagnosticsNotice,
+                instructionDiagnosticsFilterAgentId: state.debugInstructionDiagnosticsFilterAgentId,
+                instructionDiagnosticsFilterSessionKey: state.debugInstructionDiagnosticsFilterSessionKey,
+                instructionDiagnosticsFilterWorkspaceDir:
+                  state.debugInstructionDiagnosticsFilterWorkspaceDir,
+                instructionDiagnosticsExpandedKeys: state.debugInstructionDiagnosticsExpandedKeys,
                 health: state.debugHealth,
                 models: state.debugModels,
                 heartbeat: state.debugHeartbeat,
@@ -1943,6 +1985,47 @@ export function renderApp(state: AppViewState) {
                 callParams: state.debugCallParams,
                 callResult: state.debugCallResult,
                 callError: state.debugCallError,
+                onInstructionDiagnosticsFilterAgentIdChange: (next) =>
+                  (state.debugInstructionDiagnosticsFilterAgentId = next),
+                onInstructionDiagnosticsFilterSessionKeyChange: (next) =>
+                  (state.debugInstructionDiagnosticsFilterSessionKey = next),
+                onInstructionDiagnosticsFilterWorkspaceDirChange: (next) =>
+                  (state.debugInstructionDiagnosticsFilterWorkspaceDir = next),
+                onApplyInstructionDiagnosticsFilters: () => {
+                  state.debugInstructionDiagnosticsNotice = null;
+                  state.debugInstructionDiagnosticsExpandedKeys = [];
+                  return loadDebug(state);
+                },
+                onClearInstructionDiagnosticsFilters: () => {
+                  state.debugInstructionDiagnosticsFilterAgentId = "";
+                  state.debugInstructionDiagnosticsFilterSessionKey = "";
+                  state.debugInstructionDiagnosticsFilterWorkspaceDir = "";
+                  state.debugInstructionDiagnosticsError = null;
+                  state.debugInstructionDiagnosticsNotice = null;
+                  state.debugInstructionDiagnosticsExpandedKeys = [];
+                  return loadDebug(state);
+                },
+                onUseInstructionDiagnosticsInManualRpc: (filters) =>
+                  setInstructionDiagnosticsManualRpc(state, filters),
+                onCallInstructionDiagnosticsInManualRpc: (filters) =>
+                  callInstructionDiagnosticsManualRpc(state, filters),
+                onApplyInstructionDiagnosticsQuickFilter: (filters) => {
+                  state.debugInstructionDiagnosticsFilterAgentId = filters.agentId ?? "";
+                  state.debugInstructionDiagnosticsFilterSessionKey = filters.sessionKey ?? "";
+                  state.debugInstructionDiagnosticsFilterWorkspaceDir = filters.workspaceDir ?? "";
+                  state.debugInstructionDiagnosticsError = null;
+                  state.debugInstructionDiagnosticsNotice = null;
+                  state.debugInstructionDiagnosticsExpandedKeys = [];
+                  return loadDebug(state);
+                },
+                onCopyInstructionDiagnosticsText: (label, text) =>
+                  copyDebugTextToClipboard(state, label, text),
+                onToggleInstructionDiagnosticsReport: (key) => {
+                  state.debugInstructionDiagnosticsExpandedKeys =
+                    state.debugInstructionDiagnosticsExpandedKeys.includes(key)
+                      ? state.debugInstructionDiagnosticsExpandedKeys.filter((entry) => entry !== key)
+                      : [...state.debugInstructionDiagnosticsExpandedKeys, key];
+                },
                 onCallMethodChange: (next) => (state.debugCallMethod = next),
                 onCallParamsChange: (next) => (state.debugCallParams = next),
                 onRefresh: () => loadDebug(state),

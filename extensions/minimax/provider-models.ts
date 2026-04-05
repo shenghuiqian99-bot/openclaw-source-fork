@@ -14,7 +14,13 @@ export const MINIMAX_TEXT_MODEL_REFS = MINIMAX_TEXT_MODEL_ORDER.map(
   (modelId) => `minimax/${modelId}`,
 );
 
+const MINIMAX_VISION_MODEL_IDS = ["MiniMax-M2.7"] as const;
+
 const MINIMAX_MODERN_MODEL_MATCHERS = ["minimax-m2.7"] as const;
+
+export function isMiniMaxVisionModelId(modelId: string): boolean {
+  return MINIMAX_VISION_MODEL_IDS.includes(modelId.trim() as (typeof MINIMAX_VISION_MODEL_IDS)[number]);
+}
 
 export function isMiniMaxModernModelId(modelId: string): boolean {
   return matchesExactOrPrefix(modelId, MINIMAX_MODERN_MODEL_MATCHERS);

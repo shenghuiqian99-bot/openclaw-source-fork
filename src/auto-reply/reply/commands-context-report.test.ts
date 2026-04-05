@@ -89,4 +89,46 @@ describe("buildContextReply", () => {
     expect(result.text).toContain("Bootstrap max/total: 150,000 chars");
     expect(result.text).not.toContain("Bootstrap max/file: ? chars");
   });
+
+  it("shows instruction load diagnostics in detailed output when available", async () => {
+    const params = makeParams("/context detail", false);
+    params.sessionEntry!.systemPromptReport!.instructionFiles = {
+      total: 2,
+      loaded: 2,
+      missing: 0,
+      importErrorCount: 1,
+      entries: [
+        {
+          name: "CLAUDE.md",
+          path: "/tmp/workspace/.claude/CLAUDE.md",
+          missing: false,
+          kind: "claude-project",
+          loadMode: "nested-fallback",
+          order: 1,
+          importErrors: 1,
+        },
+        {
+          name: ".claude/rules/01-team.md",
+          path: "/tmp/workspace/.claude/rules/01-team.md",
+          missing: false,
+          kind: "rule",
+          loadMode: "rules-dir",
+          order: 2,
+          frontMatterStripped: true,
+          rulePaths: ["src/api/**"],
+          matchedRuleContextPaths: ["src/api/routes.ts"],
+        },
+      ],
+    };
+
+    const result = await buildContextReply(params);
+
+    expect(result.text).toContain("Instructions: 2/2 loaded, 0 missing, 1 import errors");
+    expect(result.text).toContain("Instruction files:");
+    expect(result.text).toContain("CLAUDE.md: LOADED | kind=Claude project | mode=nested-fallback");
+    expect(result.text).toContain("frontmatter stripped");
+    expect(result.text).toContain("paths=src/api/**");
+    expect(result.text).toContain("matched=src/api/routes.ts");
+    expect(result.text).toContain("1 import error(s)");
+  });
 });

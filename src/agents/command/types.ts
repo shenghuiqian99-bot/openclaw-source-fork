@@ -82,6 +82,8 @@ export type AgentCommandOpts = {
   lane?: string;
   runId?: string;
   extraSystemPrompt?: string;
+  /** Explicit workspace-relative or absolute file paths used for path-scoped instruction routing. */
+  ruleContextPaths?: string[];
   internalEvents?: AgentInternalEvent[];
   inputProvenance?: InputProvenance;
   /** Per-call stream param overrides (best-effort). */

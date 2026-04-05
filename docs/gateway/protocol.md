@@ -188,6 +188,13 @@ The Gateway treats these as **claims** and enforces server-side allowlists.
     caller-supplied auth or delivery context.
   - The response is session-scoped and reflects what the active conversation can use right now,
     including core, plugin, and channel tools.
+- Operators may call `instructions.diagnostics` (`operator.read`) to fetch the latest persisted
+  instruction-load diagnostics per agent.
+  - Optional filters: `agentId`, `sessionKey`, `workspaceDir`.
+  - Filtering is applied to persisted session-store candidates before the gateway selects the
+    latest matching report for each agent.
+  - The response reuses the same persisted `systemPromptReport.instructionFiles` summaries shown
+    by `openclaw status --deep`, `openclaw doctor --deep`, and the Control UI debug panel.
 
 ## Exec approvals
 

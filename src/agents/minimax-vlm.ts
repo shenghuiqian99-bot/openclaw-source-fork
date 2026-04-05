@@ -11,8 +11,10 @@ export function isMinimaxVlmProvider(provider: string): boolean {
   return provider === "minimax" || provider === "minimax-portal";
 }
 
+const MINIMAX_VLM_MODEL_IDS = ["MiniMax-VL-01", "MiniMax-M2.7"] as const;
+
 export function isMinimaxVlmModel(provider: string, modelId: string): boolean {
-  return isMinimaxVlmProvider(provider) && modelId.trim() === "MiniMax-VL-01";
+  return isMinimaxVlmProvider(provider) && MINIMAX_VLM_MODEL_IDS.includes(modelId.trim() as (typeof MINIMAX_VLM_MODEL_IDS)[number]);
 }
 
 function coerceApiHost(params: {

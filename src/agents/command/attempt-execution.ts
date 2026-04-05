@@ -288,6 +288,7 @@ export function runAgentAttempt(params: {
         timeoutMs: params.timeoutMs,
         runId: params.runId,
         extraSystemPrompt: params.opts.extraSystemPrompt,
+        ruleContextPaths: params.opts.ruleContextPaths,
         cliSessionId: nextCliSessionId,
         cliSessionBinding:
           nextCliSessionId === cliSessionBinding?.sessionId ? cliSessionBinding : undefined,
@@ -394,6 +395,7 @@ export function runAgentAttempt(params: {
     lane: params.opts.lane,
     abortSignal: params.opts.abortSignal,
     extraSystemPrompt: params.opts.extraSystemPrompt,
+    ruleContextPaths: params.opts.ruleContextPaths,
     inputProvenance: params.opts.inputProvenance,
     streamParams: params.opts.streamParams,
     agentDir: params.agentDir,

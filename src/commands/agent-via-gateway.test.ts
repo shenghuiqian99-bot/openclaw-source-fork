@@ -107,6 +107,27 @@ describe("agentCliCommand", () => {
     });
   });
 
+  it("passes ruleContextPaths to gateway agent calls", async () => {
+    await withTempStore(async () => {
+      mockGatewaySuccessReply();
+
+      await agentCliCommand(
+        {
+          message: "hi",
+          to: "+1555",
+          ruleContextPaths: ["src/api/routes.ts", "src/ui/page.tsx"],
+        },
+        runtime,
+      );
+
+      expect(callGateway).toHaveBeenCalledTimes(1);
+      const request = vi.mocked(callGateway).mock.calls[0]?.[0] as {
+        params?: { ruleContextPaths?: string[] };
+      };
+      expect(request.params?.ruleContextPaths).toEqual(["src/api/routes.ts", "src/ui/page.tsx"]);
+    });
+  });
+
   it("falls back to embedded agent when gateway fails", async () => {
     await withTempStore(async () => {
       vi.mocked(callGateway).mockRejectedValue(new Error("gateway not connected"));
@@ -136,6 +157,68 @@ describe("agentCliCommand", () => {
       expect(callGateway).not.toHaveBeenCalled();
       expect(agentCommand).toHaveBeenCalledTimes(1);
       expect(runtime.log).toHaveBeenCalledWith("local");
+    });
+  });
+
+  it("passes ruleContextPaths to embedded agent runs", async () => {
+    await withTempStore(async () => {
+      mockLocalAgentReply();
+
+      await agentCliCommand(
+        {
+          message: "hi",
+          to: "+1555",
+          local: true,
+          ruleContextPaths: ["src/api/routes.ts"],
+        },
+        runtime,
+      );
+
+      expect(callGateway).not.toHaveBeenCalled();
+      expect(agentCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "hi",
+          to: "+1555",
+          local: true,
+          ruleContextPaths: ["src/api/routes.ts"],
+        }),
+        runtime,
+        undefined,
+      );
+    });
+  });
+
+  it("resolves --agent main with --to and --session-id before calling gateway", async () => {
+    await withTempStore(async ({ store }) => {
+      fs.writeFileSync(
+        store,
+        JSON.stringify(
+          {
+            "agent:main:main": { sessionId: "other-session-id", updatedAt: 0 },
+            "agent:main:resume-target": { sessionId: "session-123", updatedAt: 0 },
+          },
+          null,
+          2,
+        ),
+      );
+      mockGatewaySuccessReply();
+
+      await agentCliCommand(
+        {
+          message: "hi",
+          agent: "main",
+          to: "+1555",
+          sessionId: "session-123",
+        },
+        runtime,
+      );
+
+      expect(callGateway).toHaveBeenCalledTimes(1);
+      const request = vi.mocked(callGateway).mock.calls[0]?.[0] as {
+        params?: { sessionKey?: string; sessionId?: string };
+      };
+      expect(request.params?.sessionKey).toBe("agent:main:resume-target");
+      expect(request.params?.sessionId).toBe("session-123");
     });
   });
 });

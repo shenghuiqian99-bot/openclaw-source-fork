@@ -59,6 +59,7 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "logs.tail",
     "channels.status",
     "status",
+    "instructions.diagnostics",
     "usage.status",
     "usage.cost",
     "tts.status",

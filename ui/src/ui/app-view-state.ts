@@ -282,6 +282,13 @@ export type AppViewState = {
     healthError: string | null;
     debugLoading: boolean;
     debugStatus: StatusSummary | null;
+    debugInstructionDiagnostics: import("./types.js").InstructionDiagnosticsSummary | null;
+    debugInstructionDiagnosticsError: string | null;
+    debugInstructionDiagnosticsNotice: string | null;
+    debugInstructionDiagnosticsFilterAgentId: string;
+    debugInstructionDiagnosticsFilterSessionKey: string;
+    debugInstructionDiagnosticsFilterWorkspaceDir: string;
+    debugInstructionDiagnosticsExpandedKeys: string[];
     debugHealth: HealthSummary | null;
     debugModels: ModelCatalogEntry[];
     debugHeartbeat: unknown;

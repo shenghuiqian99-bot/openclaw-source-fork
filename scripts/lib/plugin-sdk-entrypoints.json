@@ -112,6 +112,8 @@
   "googlechat",
   "image-generation",
   "image-generation-core",
+  "video-generation",
+  "video-generation-core",
   "imessage",
   "imessage-core",
   "imessage-policy",

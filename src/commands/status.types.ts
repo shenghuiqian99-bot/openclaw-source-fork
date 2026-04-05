@@ -1,4 +1,24 @@
+import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import type { ChannelId } from "../channels/plugins/types.js";
+
+type StatusInstructionFilesBlock = NonNullable<SessionSystemPromptReport["instructionFiles"]>;
+
+export type StatusInstructionFileEntry = StatusInstructionFilesBlock["entries"][number];
+
+export type StatusInstructionDiagnostics = {
+  agentId: string;
+  sessionKey: string;
+  sessionId?: string;
+  updatedAt: number | null;
+  age: number | null;
+  generatedAt: number;
+  workspaceDir: string | null;
+  total: number;
+  loaded: number;
+  missing: number;
+  importErrorCount: number;
+  entries: StatusInstructionFileEntry[];
+};
 
 export type SessionStatus = {
   agentId?: string;
@@ -48,6 +68,10 @@ export type StatusSummary = {
   };
   channelSummary: string[];
   queuedSystemEvents: string[];
+  instructionDiagnostics?: {
+    reports: number;
+    byAgent: StatusInstructionDiagnostics[];
+  };
   sessions: {
     paths: string[];
     count: number;

@@ -35,7 +35,13 @@ describe("minimax model definitions", () => {
       id: "MiniMax-M2.7",
       name: "MiniMax M2.7",
       reasoning: true,
+      input: ["text", "image"],
     });
+  });
+
+  it("keeps non-VLM MiniMax models text-only", () => {
+    const model = buildMinimaxApiModelDefinition("MiniMax-M2.7-highspeed");
+    expect(model.input).toEqual(["text"]);
   });
 
   it("builds API model definition with standard cost", () => {

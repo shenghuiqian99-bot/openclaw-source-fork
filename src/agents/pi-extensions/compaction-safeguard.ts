@@ -10,6 +10,10 @@ import {
   isRealConversationMessage,
 } from "../compaction-real-conversation.js";
 import {
+  isInstructionBootstrapFile,
+  loadWorkspaceBootstrapFiles,
+} from "../workspace.js";
+import {
   BASE_CHUNK_RATIO,
   MIN_CHUNK_RATIO,
   SAFETY_MARGIN,
@@ -515,30 +519,28 @@ function extractLatestUserAsk(messages: AgentMessage[]): string | null {
 async function readWorkspaceContextForSummary(): Promise<string> {
   const MAX_SUMMARY_CONTEXT_CHARS = 2000;
   const workspaceDir = process.cwd();
-  const agentsPath = path.join(workspaceDir, "AGENTS.md");
 
   try {
-    const opened = await openBoundaryFile({
-      absolutePath: agentsPath,
-      rootPath: workspaceDir,
-      boundaryLabel: "workspace root",
-    });
-    if (!opened.ok) {
+    const instructionFiles = (await loadWorkspaceBootstrapFiles(workspaceDir)).filter(
+      (file) => isInstructionBootstrapFile(file) && !file.missing,
+    );
+    if (instructionFiles.length === 0) {
       return "";
     }
 
-    const content = (() => {
-      try {
-        return fs.readFileSync(opened.fd, "utf-8");
-      } finally {
-        fs.closeSync(opened.fd);
-      }
-    })();
     // Accept legacy section names ("Every Session", "Safety") as fallback
     // for backward compatibility with older AGENTS.md templates.
-    let sections = extractSections(content, ["Session Startup", "Red Lines"]);
+    const readSections = (targets: string[]) => {
+      const sections: string[] = [];
+      for (const file of instructionFiles) {
+        sections.push(...extractSections(file.content ?? "", targets));
+      }
+      return sections;
+    };
+
+    let sections = readSections(["Session Startup", "Red Lines"]);
     if (sections.length === 0) {
-      sections = extractSections(content, ["Every Session", "Safety"]);
+      sections = readSections(["Every Session", "Safety"]);
     }
 
     if (sections.length === 0) {

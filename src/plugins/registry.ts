@@ -65,6 +65,7 @@ import type {
   PluginHookHandlerMap,
   PluginHookRegistration as TypedPluginHookRegistration,
   SpeechProviderPlugin,
+  VideoGenerationProviderPlugin,
   WebSearchProviderPlugin,
 } from "./types.js";
 
@@ -144,6 +145,8 @@ export type PluginMediaUnderstandingProviderRegistration =
   PluginOwnedProviderRegistration<MediaUnderstandingProviderPlugin>;
 export type PluginImageGenerationProviderRegistration =
   PluginOwnedProviderRegistration<ImageGenerationProviderPlugin>;
+export type PluginVideoGenerationProviderRegistration =
+  PluginOwnedProviderRegistration<VideoGenerationProviderPlugin>;
 export type PluginWebSearchProviderRegistration =
   PluginOwnedProviderRegistration<WebSearchProviderPlugin>;
 
@@ -204,6 +207,7 @@ export type PluginRecord = {
   speechProviderIds: string[];
   mediaUnderstandingProviderIds: string[];
   imageGenerationProviderIds: string[];
+  videoGenerationProviderIds: string[];
   webSearchProviderIds: string[];
   gatewayMethods: string[];
   cliCommands: string[];
@@ -228,6 +232,7 @@ export type PluginRegistry = {
   speechProviders: PluginSpeechProviderRegistration[];
   mediaUnderstandingProviders: PluginMediaUnderstandingProviderRegistration[];
   imageGenerationProviders: PluginImageGenerationProviderRegistration[];
+  videoGenerationProviders: PluginVideoGenerationProviderRegistration[];
   webSearchProviders: PluginWebSearchProviderRegistration[];
   gatewayHandlers: GatewayRequestHandlers;
   gatewayMethodScopes?: Partial<Record<string, OperatorScope>>;
@@ -707,6 +712,19 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     });
   };
 
+  const registerVideoGenerationProvider = (
+    record: PluginRecord,
+    provider: VideoGenerationProviderPlugin,
+  ) => {
+    registerUniqueProviderLike({
+      record,
+      provider,
+      kindLabel: "video-generation provider",
+      registrations: registry.videoGenerationProviders,
+      ownedIds: record.videoGenerationProviderIds,
+    });
+  };
+
   const registerWebSearchProvider = (record: PluginRecord, provider: WebSearchProviderPlugin) => {
     registerUniqueProviderLike({
       record,
@@ -985,6 +1003,8 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
                 registerMediaUnderstandingProvider(record, provider),
               registerImageGenerationProvider: (provider) =>
                 registerImageGenerationProvider(record, provider),
+              registerVideoGenerationProvider: (provider) =>
+                registerVideoGenerationProvider(record, provider),
               registerWebSearchProvider: (provider) => registerWebSearchProvider(record, provider),
               registerGatewayMethod: (method, handler, opts) =>
                 registerGatewayMethod(record, method, handler, opts),
@@ -1113,6 +1133,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     registerSpeechProvider,
     registerMediaUnderstandingProvider,
     registerImageGenerationProvider,
+    registerVideoGenerationProvider,
     registerWebSearchProvider,
     registerGatewayMethod,
     registerCli,

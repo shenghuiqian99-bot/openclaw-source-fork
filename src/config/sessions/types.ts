@@ -373,6 +373,29 @@ export type SessionSystemPromptReport = {
     projectContextChars: number;
     nonProjectContextChars: number;
   };
+  instructionFiles?: {
+    total: number;
+    loaded: number;
+    missing: number;
+    importErrorCount: number;
+    entries: Array<{
+      name: string;
+      path: string;
+      missing: boolean;
+      kind: "agents" | "claude-project" | "claude-local" | "rule" | "unknown";
+      loadMode:
+        | "workspace-root"
+        | "nested-fallback"
+        | "fallback-default"
+        | "rules-dir"
+        | "unknown";
+      order?: number;
+      frontMatterStripped?: boolean;
+      importErrors?: number;
+      rulePaths?: string[];
+      matchedRuleContextPaths?: string[];
+    }>;
+  };
   injectedWorkspaceFiles: Array<{
     name: string;
     path: string;

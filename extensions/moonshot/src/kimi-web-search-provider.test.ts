@@ -14,6 +14,38 @@ describe("kimi web search provider", () => {
     );
   });
 
+  it("inherits the configured native Moonshot base url when web search base url is unset", () => {
+    expect(
+      __testing.resolveConfiguredMoonshotBaseUrl({
+        models: {
+          providers: {
+            moonshot: {
+              baseUrl: "https://api.moonshot.cn/v1",
+            },
+          },
+        },
+      }),
+    ).toBe("https://api.moonshot.cn/v1");
+
+    expect(__testing.resolveKimiBaseUrl({}, "https://api.moonshot.cn/v1")).toBe(
+      "https://api.moonshot.cn/v1",
+    );
+  });
+
+  it("ignores non-native Moonshot provider base urls when choosing the default web search host", () => {
+    expect(
+      __testing.resolveConfiguredMoonshotBaseUrl({
+        models: {
+          providers: {
+            moonshot: {
+              baseUrl: "https://proxy.example/v1",
+            },
+          },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it("extracts unique citations from search results and tool call arguments", () => {
     expect(
       __testing.extractKimiCitations({
@@ -38,6 +70,25 @@ describe("kimi web search provider", () => {
     ).toEqual(["https://a.test", "https://b.test", "https://c.test"]);
   });
 
+  it("echoes builtin tool arguments back to Moonshot when present", () => {
+    expect(
+      __testing.buildKimiToolMessageContent(
+        {
+          function: {
+            arguments: JSON.stringify({
+              search_result: {
+                search_id: "abc123",
+              },
+            }),
+          },
+        },
+        {
+          search_results: [{ url: "https://fallback.test", title: "Fallback", content: "x" }],
+        },
+      ),
+    ).toBe(JSON.stringify({ search_result: { search_id: "abc123" } }));
+  });
+
   it("uses config apiKey when provided", () => {
     expect(__testing.resolveKimiApiKey({ apiKey: "kimi-test-key" })).toBe("kimi-test-key");
   });
@@ -46,5 +97,17 @@ describe("kimi web search provider", () => {
     withEnv({ [kimiApiKeyEnv]: "kimi-env-key" }, () => {
       expect(__testing.resolveKimiApiKey({})).toBe("kimi-env-key");
     });
+  });
+
+  it("prefers the main agent-scoped Moonshot key over the generic Moonshot key", () => {
+    withEnv(
+      {
+        OPENCLAW_MAIN_MOONSHOT_API_KEY: "main-moonshot-key",
+        MOONSHOT_API_KEY: "generic-moonshot-key",
+      },
+      () => {
+        expect(__testing.resolveKimiApiKey({})).toBe("main-moonshot-key");
+      },
+    );
   });
 });

@@ -1,5 +1,9 @@
 export type UpdateAvailable = import("../../../src/infra/update-startup.js").UpdateAvailable;
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
+import type {
+  InstructionsDiagnosticsParams,
+  InstructionsDiagnosticsResult,
+} from "../../../src/gateway/protocol/schema/types.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
 import type {
   GatewayAgentRow as SharedGatewayAgentRow,
@@ -616,6 +620,8 @@ export type SkillStatusReport = {
 };
 
 export type StatusSummary = Record<string, unknown>;
+export type InstructionDiagnosticsFilters = InstructionsDiagnosticsParams;
+export type InstructionDiagnosticsSummary = InstructionsDiagnosticsResult;
 
 export type HealthSnapshot = Record<string, unknown>;
 

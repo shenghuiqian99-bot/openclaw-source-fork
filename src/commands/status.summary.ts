@@ -11,7 +11,13 @@ import { peekSystemEvents } from "../infra/system-events.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import { resolveRuntimeServiceVersion } from "../version.js";
-import type { HeartbeatStatus, SessionStatus, StatusSummary } from "./status.types.js";
+import { buildLatestInstructionDiagnosticsFromStore } from "./instruction-diagnostics.js";
+import type {
+  HeartbeatStatus,
+  SessionStatus,
+  StatusInstructionDiagnostics,
+  StatusSummary,
+} from "./status.types.js";
 
 let channelSummaryModulePromise: Promise<typeof import("../infra/channel-summary.js")> | undefined;
 let linkChannelModulePromise: Promise<typeof import("./status.link-channel.js")> | undefined;
@@ -77,6 +83,14 @@ const buildFlags = (entry?: SessionEntry): string[] => {
 export function redactSensitiveStatusSummary(summary: StatusSummary): StatusSummary {
   return {
     ...summary,
+    ...(summary.instructionDiagnostics
+      ? {
+          instructionDiagnostics: {
+            reports: summary.instructionDiagnostics.reports,
+            byAgent: [],
+          },
+        }
+      : {}),
     sessions: {
       ...summary.sessions,
       paths: [],
@@ -157,6 +171,7 @@ export async function getStatusSummary(
 
   const now = Date.now();
   const storeCache = new Map<string, Record<string, SessionEntry | undefined>>();
+  const instructionDiagnosticsByAgent: StatusInstructionDiagnostics[] = [];
   const loadStore = (storePath: string) => {
     const cached = storeCache.get(storePath);
     if (cached) {
@@ -232,6 +247,14 @@ export async function getStatusSummary(
     const storePath = resolveStorePath(cfg.session?.store, { agentId: agent.id });
     paths.add(storePath);
     const store = loadStore(storePath);
+    const latestInstructionDiagnostics = buildLatestInstructionDiagnosticsFromStore({
+      store,
+      agentId: agent.id,
+      now,
+    });
+    if (latestInstructionDiagnostics) {
+      instructionDiagnosticsByAgent.push(latestInstructionDiagnostics);
+    }
     const sessions = buildSessionRows(store, { agentIdOverride: agent.id });
     return {
       agentId: agent.id,
@@ -263,6 +286,10 @@ export async function getStatusSummary(
     },
     channelSummary,
     queuedSystemEvents,
+    instructionDiagnostics: {
+      reports: instructionDiagnosticsByAgent.length,
+      byAgent: instructionDiagnosticsByAgent,
+    },
     sessions: {
       paths: Array.from(paths),
       count: totalSessions,

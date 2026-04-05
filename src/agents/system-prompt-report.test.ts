@@ -112,4 +112,69 @@ describe("buildSystemPromptReport", () => {
 
     expect(report.injectedWorkspaceFiles[0]?.injectedChars).toBe("trimmed".length);
   });
+
+  it("includes instruction load diagnostics for compatible instruction files", () => {
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [
+        makeBootstrapFile({
+          name: "CLAUDE.md",
+          path: "/tmp/workspace/.claude/CLAUDE.md",
+          content: "Use shared rules\n[IMPORT ERROR] @missing.md -> missing or outside workspace",
+          instruction: true,
+          instructionKind: "claude-project",
+          instructionLoadMode: "nested-fallback",
+        }),
+        makeBootstrapFile({
+          name: ".claude/rules/01-team.md",
+          path: "/tmp/workspace/.claude/rules/01-team.md",
+          content: "## Session Startup\n\nRead the checklist.",
+          instruction: true,
+          instructionKind: "rule",
+          instructionLoadMode: "rules-dir",
+          frontMatterStripped: true,
+          rulePaths: ["src/api/**"],
+          matchedRuleContextPaths: ["src/api/routes.ts"],
+        }),
+      ],
+      injectedFiles: [
+        { path: "/tmp/workspace/.claude/CLAUDE.md", content: "shared" },
+        { path: "/tmp/workspace/.claude/rules/01-team.md", content: "rule" },
+      ],
+      skillsPrompt: "",
+      tools: [],
+    });
+
+    expect(report.instructionFiles).toEqual({
+      total: 2,
+      loaded: 2,
+      missing: 0,
+      importErrorCount: 1,
+      entries: [
+        {
+          name: "CLAUDE.md",
+          path: "/tmp/workspace/.claude/CLAUDE.md",
+          missing: false,
+          kind: "claude-project",
+          loadMode: "nested-fallback",
+          order: 1,
+          importErrors: 1,
+        },
+        {
+          name: ".claude/rules/01-team.md",
+          path: "/tmp/workspace/.claude/rules/01-team.md",
+          missing: false,
+          kind: "rule",
+          loadMode: "rules-dir",
+          order: 2,
+          frontMatterStripped: true,
+          rulePaths: ["src/api/**"],
+          matchedRuleContextPaths: ["src/api/routes.ts"],
+        },
+      ],
+    });
+  });
 });

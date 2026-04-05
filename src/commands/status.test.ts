@@ -32,6 +32,68 @@ function createDefaultSessionStoreEntry() {
   };
 }
 
+function createInstructionReport() {
+  return {
+    source: "run" as const,
+    generatedAt: Date.now() - 30_000,
+    workspaceDir: "/tmp/openclaw",
+    systemPrompt: {
+      chars: 500,
+      projectContextChars: 500,
+      nonProjectContextChars: 0,
+    },
+    instructionFiles: {
+      total: 2,
+      loaded: 2,
+      missing: 0,
+      importErrorCount: 0,
+      entries: [
+        {
+          name: "AGENTS.md",
+          path: "/tmp/openclaw/AGENTS.md",
+          missing: false,
+          kind: "agents" as const,
+          loadMode: "workspace-root" as const,
+          order: 1,
+        },
+        {
+          name: ".claude/rules/01-team.md",
+          path: "/tmp/openclaw/.claude/rules/01-team.md",
+          missing: false,
+          kind: "rule" as const,
+          loadMode: "rules-dir" as const,
+          order: 2,
+          frontMatterStripped: true,
+          rulePaths: ["src/api/**"],
+          matchedRuleContextPaths: ["src/api/routes.ts"],
+        },
+      ],
+    },
+    injectedWorkspaceFiles: [],
+    skills: { promptChars: 0, entries: [] },
+    tools: { listChars: 0, schemaChars: 0, entries: [] },
+  };
+}
+
+function createHealthSummary() {
+  return {
+    ok: true as const,
+    ts: Date.now(),
+    durationMs: 12,
+    channels: {},
+    channelOrder: [],
+    channelLabels: {},
+    heartbeatSeconds: 1800,
+    defaultAgentId: "main",
+    agents: [],
+    sessions: {
+      path: "/tmp/sessions.json",
+      count: 1,
+      recent: [],
+    },
+  };
+}
+
 function createUnknownUsageSessionStore() {
   return {
     "+1000": {
@@ -508,6 +570,7 @@ describe("statusCommand", () => {
     expect(payload.sessions.recent[0].totalTokensFresh).toBe(true);
     expect(payload.sessions.recent[0].remainingTokens).toBe(5000);
     expect(payload.sessions.recent[0].flags).toContain("verbose:on");
+    expect(payload.instructionDiagnostics).toBeUndefined();
     expect(payload.securityAudit.summary.critical).toBe(1);
     expect(payload.securityAudit.summary.warn).toBe(1);
     expect(payload.gatewayService.label).toBe("LaunchAgent");
@@ -582,6 +645,44 @@ describe("statusCommand", () => {
           line.includes("openclaw --profile isolated status --all"),
       ),
     ).toBe(true);
+  });
+
+  it("includes latest instruction diagnostics in deep JSON output", async () => {
+    mocks.loadSessionStore.mockReturnValue({
+      "+1000": {
+        ...createDefaultSessionStoreEntry(),
+        systemPromptReport: createInstructionReport(),
+      },
+    });
+    mocks.callGateway.mockResolvedValueOnce(createHealthSummary());
+
+    await statusCommand({ json: true, deep: true }, runtime as never);
+
+    const payload = JSON.parse(String(runtimeLogMock.mock.calls.at(-1)?.[0]));
+    expect(payload.instructionDiagnostics.reports).toBe(1);
+    expect(payload.instructionDiagnostics.byAgent[0].agentId).toBe("main");
+    expect(payload.instructionDiagnostics.byAgent[0].entries[1].rulePaths).toEqual(["src/api/**"]);
+    expect(payload.instructionDiagnostics.byAgent[0].entries[1].matchedRuleContextPaths).toEqual([
+      "src/api/routes.ts",
+    ]);
+  });
+
+  it("renders latest instruction diagnostics in deep text output", async () => {
+    mocks.loadSessionStore.mockReturnValue({
+      "+1000": {
+        ...createDefaultSessionStoreEntry(),
+        systemPromptReport: createInstructionReport(),
+      },
+    });
+    mocks.callGateway.mockResolvedValueOnce(createHealthSummary());
+
+    const joined = await runStatusAndGetJoinedLogs({ deep: true });
+
+    expect(joined).toContain("Instructions");
+    expect(joined).toContain("AGENTS.md");
+    expect(joined).toContain("01-team.md");
+    expect(joined).toContain("paths=src/api/**");
+    expect(joined).toContain("matched=src/api/routes.ts");
   });
 
   it("shows gateway auth when reachable", async () => {

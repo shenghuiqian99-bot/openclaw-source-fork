@@ -1,5 +1,9 @@
 import type { ModelDefinitionConfig } from "openclaw/plugin-sdk/provider-model-shared";
-import { MINIMAX_DEFAULT_MODEL_ID, MINIMAX_TEXT_MODEL_CATALOG } from "./provider-models.js";
+import {
+  isMiniMaxVisionModelId,
+  MINIMAX_DEFAULT_MODEL_ID,
+  MINIMAX_TEXT_MODEL_CATALOG,
+} from "./provider-models.js";
 
 export const DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 export const MINIMAX_API_BASE_URL = "https://api.minimax.io/anthropic";
@@ -43,7 +47,7 @@ export function buildMinimaxModelDefinition(params: {
     id: params.id,
     name: params.name ?? catalog?.name ?? `MiniMax ${params.id}`,
     reasoning: params.reasoning ?? catalog?.reasoning ?? false,
-    input: ["text"],
+    input: isMiniMaxVisionModelId(params.id) ? ["text", "image"] : ["text"],
     cost: params.cost,
     contextWindow: params.contextWindow,
     maxTokens: params.maxTokens,

@@ -70,6 +70,26 @@ These are the standard files OpenClaw expects inside the workspace:
   - Loaded at the start of every session.
   - Good place for rules, priorities, and "how to behave" details.
 
+- `CLAUDE.md` or `.claude/CLAUDE.md` (compatible alternative)
+  - Optional Claude Code style project instructions.
+  - OpenClaw loads these alongside `AGENTS.md` when present, or uses them as the primary instruction file when `AGENTS.md` is absent.
+  - Useful for sharing one instruction set across OpenClaw and Claude Code without duplicating policy text.
+  - Supports workspace-scoped `@path/to/file` imports with recursive expansion (max depth: 5). Imported files must stay inside the workspace root.
+
+- `.claude/rules/**/*.md` (compatible modular rules)
+  - Optional modular Claude-style rule files.
+  - OpenClaw auto-loads Markdown files under `.claude/rules/` in lexical order after project instruction files and before `CLAUDE.local.md`.
+  - Useful for splitting large instruction sets into topic-focused files without inflating `AGENTS.md` or `CLAUDE.md`.
+  - Rule-file frontmatter is stripped before injection so metadata such as `description` stays out of the prompt.
+  - When a run supplies explicit `ruleContextPaths`, rule files may also declare YAML frontmatter `paths` globs; those scoped rules load only when one of the supplied workspace-relative paths matches.
+  - Without `ruleContextPaths`, scoped rule files still load unconditionally so existing workspaces keep the previous full-load behavior.
+  - Rule files also support workspace-scoped `@path/to/file` imports.
+
+- `CLAUDE.local.md` (compatible alternative)
+  - Optional personal project-local instructions.
+  - Loaded after project instruction files so user-local notes can refine shared guidance.
+  - Keep it gitignored when it contains personal preferences or machine-local paths.
+
 - `SOUL.md`
   - Persona, tone, and boundaries.
   - Loaded every session.
@@ -121,7 +141,10 @@ the session and continues. Large bootstrap files are truncated when injected;
 adjust limits with `agents.defaults.bootstrapMaxChars` (default: 20000) and
 `agents.defaults.bootstrapTotalMaxChars` (default: 150000).
 `openclaw setup` can recreate missing defaults without overwriting existing
-files.
+files. Compatible Claude instruction files are optional and do not generate
+missing-file markers. Auto-loaded `.claude/rules/**/*.md` files are also optional
+and only load when present.
+Import failures inside instruction files are surfaced inline as `[IMPORT ERROR]` markers so the agent can diagnose missing or blocked includes.
 
 ## What is NOT in the workspace
 

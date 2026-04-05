@@ -72,6 +72,10 @@ function buildColdStartStatusSummary(): Awaited<ReturnType<typeof getStatusSumma
     },
     channelSummary: [],
     queuedSystemEvents: [],
+    instructionDiagnostics: {
+      reports: 0,
+      byAgent: [],
+    },
     sessions: {
       paths: [],
       count: 0,

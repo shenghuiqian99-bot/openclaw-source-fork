@@ -79,6 +79,7 @@ import type {
   CronRunLogEntry,
   CronStatus,
   HealthSummary,
+  InstructionDiagnosticsSummary,
   LogEntry,
   LogLevel,
   ModelCatalogEntry,
@@ -420,6 +421,13 @@ export class OpenClawApp extends LitElement {
 
   @state() debugLoading = false;
   @state() debugStatus: StatusSummary | null = null;
+  @state() debugInstructionDiagnostics: InstructionDiagnosticsSummary | null = null;
+  @state() debugInstructionDiagnosticsError: string | null = null;
+  @state() debugInstructionDiagnosticsNotice: string | null = null;
+  @state() debugInstructionDiagnosticsFilterAgentId = "";
+  @state() debugInstructionDiagnosticsFilterSessionKey = "";
+  @state() debugInstructionDiagnosticsFilterWorkspaceDir = "";
+  @state() debugInstructionDiagnosticsExpandedKeys: string[] = [];
   @state() debugHealth: HealthSummary | null = null;
   @state() debugModels: ModelCatalogEntry[] = [];
   @state() debugHeartbeat: unknown = null;

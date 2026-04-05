@@ -76,6 +76,7 @@ export async function statusJsonCommand(
     getDaemonStatusSummary(),
     getNodeDaemonStatusSummary(),
   ]);
+  const { instructionDiagnostics, ...summaryPayload } = scan.summary;
   const channelInfo = resolveUpdateChannelDisplay({
     configChannel: normalizeUpdateChannel(scan.cfg.update?.channel),
     installKind: scan.update.installKind,
@@ -84,7 +85,7 @@ export async function statusJsonCommand(
   });
 
   writeRuntimeJson(runtime, {
-    ...scan.summary,
+    ...summaryPayload,
     os: scan.osSummary,
     update: scan.update,
     updateChannel: channelInfo.channel,
@@ -106,6 +107,14 @@ export async function statusJsonCommand(
     nodeService: nodeDaemon,
     agents: scan.agentStatus,
     secretDiagnostics: scan.secretDiagnostics,
+    ...(opts.deep || opts.all
+      ? {
+          instructionDiagnostics: instructionDiagnostics ?? {
+            reports: 0,
+            byAgent: [],
+          },
+        }
+      : {}),
     ...(securityAudit ? { securityAudit } : {}),
     ...(health || usage || lastHeartbeat ? { health, usage, lastHeartbeat } : {}),
   });

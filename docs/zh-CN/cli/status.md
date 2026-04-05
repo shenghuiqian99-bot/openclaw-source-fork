@@ -27,7 +27,9 @@ openclaw status --usage
 注意事项：
 
 - `--deep` 运行实时探测（WhatsApp Web + Telegram + Discord + Google Chat + Slack + Signal）。
+- `--deep` 现在还会显示每个智能体“最近一次已知”的指令加载诊断，数据来自各自 session store 中最近持久化的 `systemPromptReport.instructionFiles`。
 - 当配置了多个智能体时，输出包含每个智能体的会话存储。
 - 概览包含 Gateway 网关 + 节点主机服务安装/运行时状态（如果可用）。
 - 概览包含更新渠道 + git SHA（用于源代码检出）。
 - 更新信息显示在概览中；如果有可用更新，status 会打印提示运行 `openclaw update`（参见[更新](/install/updating)）。
+- `status --json --deep` 与 `status --json --all` 现在会包含 `instructionDiagnostics` 区块，汇总每个智能体最近一次已知的指令文件报告；若存在路径作用域规则，也会带出 `paths` / `matched` 元数据。
