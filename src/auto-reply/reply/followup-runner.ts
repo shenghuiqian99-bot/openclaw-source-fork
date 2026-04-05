@@ -328,9 +328,8 @@ export function createFollowupRunner(params: {
         queued.originatingAccountId,
         queued.originatingChatType,
       );
-      // "auto" must be resolved before reaching the filter — followup runs
-      // are never queued, so "auto" always means "off" here.
-      const replyToMode = rawReplyToMode === "auto" ? "off" : rawReplyToMode;
+      // Followup runs are always queued work — "auto" resolves to "first" (quote the triggering message).
+      const replyToMode = rawReplyToMode === "auto" ? "first" : rawReplyToMode;
 
       const replyTaggedPayloads: ReplyPayload[] = applyReplyThreading({
         payloads: sanitizedPayloads,
